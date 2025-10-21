@@ -11,6 +11,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import {
+  Home,
   LayoutDashboard,
   BookOpen,
   FileText,
@@ -27,30 +28,35 @@ import nysLogo from "@assets/generated_images/NYS_Kenya_official_logo_4530e265.p
 interface AppSidebarProps {
   userRole: "student" | "tutor" | "admin";
   userName: string;
+  onNavigate: (page: string) => void;
+  currentPage: string;
 }
 
-export function AppSidebar({ userRole, userName }: AppSidebarProps) {
+export function AppSidebar({ userRole, userName, onNavigate, currentPage }: AppSidebarProps) {
   const studentItems = [
-    { title: "Dashboard", url: "#", icon: LayoutDashboard },
-    { title: "My Courses", url: "#", icon: BookOpen },
-    { title: "Assignments", url: "#", icon: FileText },
-    { title: "Announcements", url: "#", icon: Bell },
+    { title: "Home", page: "homepage", icon: Home },
+    { title: "Dashboard", page: "dashboard", icon: LayoutDashboard },
+    { title: "My Courses", page: "courses", icon: BookOpen },
+    { title: "Assignments", page: "assignments", icon: FileText },
+    { title: "Announcements", page: "announcements", icon: Bell },
   ];
 
   const tutorItems = [
-    { title: "Dashboard", url: "#", icon: LayoutDashboard },
-    { title: "My Courses", url: "#", icon: GraduationCap },
-    { title: "Assignments", url: "#", icon: ClipboardList },
-    { title: "Students", url: "#", icon: Users },
-    { title: "Analytics", url: "#", icon: BarChart },
+    { title: "Home", page: "homepage", icon: Home },
+    { title: "Dashboard", page: "dashboard", icon: LayoutDashboard },
+    { title: "My Courses", page: "courses", icon: GraduationCap },
+    { title: "Assignments", page: "assignments", icon: ClipboardList },
+    { title: "Students", page: "students", icon: Users },
+    { title: "Analytics", page: "analytics", icon: BarChart },
   ];
 
   const adminItems = [
-    { title: "Dashboard", url: "#", icon: LayoutDashboard },
-    { title: "Users", url: "#", icon: Users },
-    { title: "Courses", url: "#", icon: BookOpen },
-    { title: "Analytics", url: "#", icon: BarChart },
-    { title: "Settings", url: "#", icon: Settings },
+    { title: "Home", page: "homepage", icon: Home },
+    { title: "Dashboard", page: "dashboard", icon: LayoutDashboard },
+    { title: "Users", page: "users", icon: Users },
+    { title: "Courses", page: "courses", icon: BookOpen },
+    { title: "Analytics", page: "analytics", icon: BarChart },
+    { title: "Settings", page: "settings", icon: Settings },
   ];
 
   const items = userRole === "student" ? studentItems : userRole === "tutor" ? tutorItems : adminItems;
@@ -73,11 +79,17 @@ export function AppSidebar({ userRole, userName }: AppSidebarProps) {
             <SidebarMenu>
               {items.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild data-testid={`link-sidebar-${item.title.toLowerCase().replace(" ", "-")}`}>
-                    <a href={item.url} className="hover-elevate active-elevate-2">
+                  <SidebarMenuButton 
+                    asChild 
+                    data-testid={`link-sidebar-${item.title.toLowerCase().replace(" ", "-")}`}
+                    isActive={currentPage === item.page}
+                    onClick={() => onNavigate(item.page)}
+                    className="hover-elevate active-elevate-2"
+                  >
+                    <button>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
-                    </a>
+                    </button>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
