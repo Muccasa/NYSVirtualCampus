@@ -18,7 +18,7 @@ export default function LecturerDashboard() {
             Manage your NYS courses and track student progress
           </p>
         </div>
-        <Button data-testid="button-create-course">
+        <Button data-testid="button-create-course" onClick={() => navigate("/create-course")}>
           <Plus className="mr-2 h-4 w-4" />
           Create Course
         </Button>

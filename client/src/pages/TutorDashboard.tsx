@@ -7,7 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import techThumbnail from "@assets/generated_images/Technology_course_thumbnail_5e4c2c8c.png";
 import businessThumbnail from "@assets/generated_images/Business_course_thumbnail_7c0cd7e6.png";
 
-export default function TutorDashboard() {
+type TutorDashboardProps = {
+  onNavigate?: (page: string) => void;
+};
+
+export default function TutorDashboard({ onNavigate }: TutorDashboardProps) {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -19,10 +23,25 @@ export default function TutorDashboard() {
             Manage your courses and track student progress
           </p>
         </div>
-        <Button data-testid="button-create-course">
+        <div className="flex gap-2">
+          <Button data-testid="button-create-course" onClick={() => onNavigate?.("create-course")}>
           <Plus className="mr-2 h-4 w-4" />
           Create Course
-        </Button>
+          </Button>
+          <Button variant="outline" data-testid="button-create-assignment" onClick={() => onNavigate?.("create-assignment")}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Assignment
+          </Button>
+          <Button variant="outline" data-testid="button-manage-assignments" onClick={() => onNavigate?.("manage-assignments")}>
+            Manage Assignments
+          </Button>
+          <Button variant="outline" data-testid="button-tutor-grades" onClick={() => onNavigate?.("tutor-grades")}>
+            Grades
+          </Button>
+          <Button variant="outline" data-testid="button-tutor-announcements" onClick={() => onNavigate?.("announcements")}>
+            Announcements
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
