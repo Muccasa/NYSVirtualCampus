@@ -11,7 +11,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Authentication middleware (simplified for demo)
   const authenticate = (req: any, res: any, next: any) => {
     // In a real app, you'd verify JWT tokens or session
-    req.user = { id: "demo-user", role: "student" }; // Default for demo
+    const allowedRoles = ["student", "tutor", "admin"] as const;
+    const headerRole = (req.headers["x-role"] as string | undefined)?.toLowerCase();
+    const isAllowedHeaderRole = headerRole && allowedRoles.includes(headerRole as any);
+
+    // In development, default to admin to make it easier to test protected routes
+    const defaultRole = app.get("env") === "development" ? "admin" : "student";
+
+    req.user = { id: "demo-user", role: (isAllowedHeaderRole ? headerRole : defaultRole) };
     next();
   };
 
