@@ -1,6 +1,7 @@
-import type { Express } from "express";
+import type { Express, NextFunction, RequestHandler } from "express";
 import { createServer, type Server } from "http";
 import { Router, type Response } from "express";
+import mongoose from 'mongoose';
 import { 
   User, Course, Assignment, Submission, Grade, Announcement, Enrollment 
 } from "./mongodb";
@@ -17,7 +18,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const router = Router();
 
   // JWT Authentication middleware
-  const authenticate = (req: AuthenticatedRequest, res: any, next: any) => {
+  const authenticate: RequestHandler = (req, res, next) => {
     try {
       const authHeader = req.headers.authorization;
       const token = extractTokenFromHeader(authHeader);
@@ -31,7 +32,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Invalid token" });
       }
 
-      req.user = decoded;
+      (req as AuthenticatedRequest).user = decoded;
       next();
     } catch (error) {
       console.error("Authentication error:", error);
@@ -39,12 +40,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   };
 
-  const requireRole = (roles: string[]) => (req: AuthenticatedRequest, res: any, next: any) => {
-    if (!roles.includes(req.user.role)) {
+  const requireRole = (roles: string[]): RequestHandler => (req, res, next) => {
+    const authReq = req as AuthenticatedRequest;
+    if (!roles.includes(authReq.user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
     next();
   };
+
+  // Health check endpoint
+  router.get("/health", (req, res) => {
+    res.json({ 
+      status: "ok", 
+      timestamp: new Date().toISOString(),
+      database: mongoose.connection.readyState === 1 ? "connected" : "disconnected"
+    });
+  });
 
   // Authentication routes
   router.post("/auth/login", async (req, res) => {
@@ -53,6 +64,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!email || !password) {
         return res.status(400).json({ error: "Email and password are required" });
+      }
+
+      // Check if database is connected
+      if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({ error: "Database not available" });
       }
 
       // Find user by email
@@ -138,7 +154,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Users routes
-  router.get("/users", authenticate, requireRole(["admin"]), async (req: AuthenticatedRequest, res: Response) => {
+  router.get("/users", authenticate, requireRole(["admin"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const allUsers = await User.find().select('-password');
       res.json(allUsers);
@@ -148,7 +165,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  router.post("/users", authenticate, requireRole(["admin"]), async (req: AuthenticatedRequest, res: Response) => {
+  router.post("/users", authenticate, requireRole(["admin"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const newUser = new User(req.body);
       await newUser.save();
@@ -160,7 +178,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Courses routes
-  router.get("/courses", authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  router.get("/courses", authenticate, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const allCourses = await Course.find({ isActive: true }).populate('instructorId', 'fullName');
       res.json(allCourses);
@@ -170,7 +189,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  router.post("/courses", authenticate, requireRole(["tutor", "admin"]), async (req: AuthenticatedRequest, res: Response) => {
+  router.post("/courses", authenticate, requireRole(["tutor", "admin"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       // Generate a unique enrollment key
       const enrollmentKey = nanoid(8).toUpperCase();
@@ -188,7 +208,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  router.get("/courses/:id", authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  router.get("/courses/:id", authenticate, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const course = await Course.findById(req.params.id).populate('instructorId', 'fullName');
       if (!course) {
@@ -196,8 +217,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Only show enrollment key to tutors and admins
-      const response = course.toObject();
-      if (req.user.role !== 'student') {
+      const response = course.toObject() as any;
+      if (authReq.user.role !== 'student') {
         response.enrollmentKey = course.enrollmentKey;
       } else {
         delete response.enrollmentKey;
@@ -211,7 +232,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Generate new enrollment key for a course
-  router.post("/courses/:id/regenerate-key", authenticate, requireRole(["tutor", "admin"]), async (req: AuthenticatedRequest, res: Response) => {
+  router.post("/courses/:id/regenerate-key", authenticate, requireRole(["tutor", "admin"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const course = await Course.findById(req.params.id);
       if (!course) {
@@ -219,7 +241,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if the user is the instructor or admin
-      if (req.user.role !== 'admin' && course.instructorId.toString() !== req.user.userId) {
+      if (authReq.user.role !== 'admin' && course.instructorId.toString() !== authReq.user.userId) {
         return res.status(403).json({ error: "Only the course instructor or admin can regenerate the key" });
       }
 
@@ -235,7 +257,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Assignments routes
-  router.get("/assignments", authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  router.get("/assignments", authenticate, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const { courseId } = req.query;
       let query = { isActive: true };
@@ -252,7 +275,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  router.post("/assignments", authenticate, requireRole(["tutor", "admin"]), async (req: AuthenticatedRequest, res: Response) => {
+  router.post("/assignments", authenticate, requireRole(["tutor", "admin"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const newAssignment = new Assignment(req.body);
       await newAssignment.save();
@@ -264,7 +288,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  router.put("/assignments/:id", authenticate, requireRole(["tutor", "admin"]), async (req: AuthenticatedRequest, res: Response) => {
+  router.put("/assignments/:id", authenticate, requireRole(["tutor", "admin"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const { dueDate } = req.body;
       const updatedAssignment = await Assignment.findByIdAndUpdate(
@@ -285,7 +310,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Submissions routes
-  router.get("/submissions", authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  router.get("/submissions", authenticate, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const { assignmentId, studentId } = req.query;
       let query: any = {};
@@ -307,7 +333,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  router.post("/submissions", authenticate, requireRole(["student"]), async (req: AuthenticatedRequest, res: Response) => {
+  router.post("/submissions", authenticate, requireRole(["student"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const newSubmission = new Submission(req.body);
       await newSubmission.save();
@@ -336,7 +363,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Grades routes
-  router.get("/grades", authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  router.get("/grades", authenticate, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const { studentId, assignmentId } = req.query;
       let query: any = {};
@@ -359,7 +387,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  router.put("/grades/:id", authenticate, requireRole(["tutor", "admin"]), async (req: AuthenticatedRequest, res: Response) => {
+  router.put("/grades/:id", authenticate, requireRole(["tutor", "admin"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const { manualScore, feedback } = req.body;
       const updatedGrade = await Grade.findByIdAndUpdate(
@@ -368,7 +397,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           manualScore, 
           feedback, 
           status: "graded",
-          gradedBy: req.user.userId,
+          gradedBy: authReq.user.userId,
           gradedAt: new Date()
         },
         { new: true }
@@ -386,7 +415,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Announcements routes
-  router.get("/announcements", authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  router.get("/announcements", authenticate, async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const { courseId, isGlobal } = req.query;
       let query: any = {};
@@ -409,7 +439,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  router.post("/announcements", authenticate, requireRole(["tutor", "admin"]), async (req: AuthenticatedRequest, res: Response) => {
+  router.post("/announcements", authenticate, requireRole(["tutor", "admin"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const newAnnouncement = new Announcement(req.body);
       await newAnnouncement.save();
@@ -422,7 +453,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Course enrollments
-  router.post("/enrollments", authenticate, requireRole(["student"]), async (req: AuthenticatedRequest, res: Response) => {
+  router.post("/enrollments", authenticate, requireRole(["student"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const { courseId, enrollmentKey } = req.body;
       
@@ -443,7 +475,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if student is already enrolled
       const existingEnrollment = await Enrollment.findOne({
         courseId,
-        studentId: req.user.userId
+        studentId: authReq.user.userId
       });
 
       if (existingEnrollment) {
@@ -452,7 +484,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const enrollment = new Enrollment({
         courseId,
-        studentId: req.user.userId,
+        studentId: authReq.user.userId,
       });
       await enrollment.save();
       res.json(enrollment);
@@ -463,7 +495,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin dashboard data
-  router.get("/admin/dashboard", authenticate, requireRole(["admin"]), async (req: AuthenticatedRequest, res: Response) => {
+  router.get("/admin/dashboard", authenticate, requireRole(["admin"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
     try {
       const userCount = await User.countDocuments();
       const courseCount = await Course.countDocuments();

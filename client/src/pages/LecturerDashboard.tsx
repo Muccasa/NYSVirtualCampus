@@ -1,7 +1,8 @@
 import { StatCard } from "@/components/StatCard";
 import { CourseCard } from "@/components/CourseCard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"import { Users, BookOpen, FileCheck, TrendingUp, Plus } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Users, BookOpen, FileCheck, TrendingUp, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import techThumbnail from "@assets/generated_images/Technology_course_thumbnail_5e4c2c8c.png";
 import businessThumbnail from "@assets/generated_images/Business_course_thumbnail_7c0cd7e6.png";
@@ -18,7 +19,7 @@ export default function LecturerDashboard() {
             Manage your NYS courses and track student progress
           </p>
         </div>
-        <Button data-testid="button-create-course" onClick={() => navigate("/create-course")}>
+        <Button data-testid="button-create-course" onClick={() => window.location.href = "/create-course"}>
           <Plus className="mr-2 h-4 w-4" />
           Create Course
         </Button>
