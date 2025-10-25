@@ -18,3 +18,5 @@ dist
 *.swp
 *.swo
 *~
+build.sh
+build.bat
