@@ -120,8 +120,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "User already exists" });
       }
 
+      // Ensure username exists for schema requirements. Derive from email if not provided.
+      const username = req.body.username || (email.includes('@') ? email.split('@')[0] : email);
+
       // Create new user
       const newUser = new User({
+        username,
         email,
         password, // In production, hash this password
         fullName,

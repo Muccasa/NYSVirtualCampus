@@ -1,4 +1,4 @@
-import * as jwt from 'jsonwebtoken';
+import jsonwebtoken from 'jsonwebtoken';
 import { Request } from 'express';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-production';
@@ -16,12 +16,13 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export function generateToken(payload: Omit<JWTPayload, 'iat' | 'exp'>): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
+  // jsonwebtoken is a CommonJS package; use its exported sign via any-cast to avoid ESM interop issues
+  return (jsonwebtoken as any).sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
 
 export function verifyToken(token: string): JWTPayload | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+  const decoded = (jsonwebtoken as any).verify(token, JWT_SECRET) as JWTPayload;
     return decoded;
   } catch (error) {
     console.error('JWT verification failed:', error);

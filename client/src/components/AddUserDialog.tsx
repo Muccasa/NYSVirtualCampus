@@ -47,11 +47,19 @@ export function AddUserDialog({ onUserAdded }: AddUserDialogProps) {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/auth/register', {
+      // If an auth token is present, create the user via the admin-protected endpoint.
+      // Otherwise fall back to the public register endpoint.
+      const token = localStorage.getItem('token');
+      const url = token ? '/api/users' : '/api/auth/register';
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(formData),
       });
 
@@ -71,10 +79,18 @@ export function AddUserDialog({ onUserAdded }: AddUserDialogProps) {
         });
         onUserAdded?.();
       } else {
-        const error = await response.json();
+        // Attempt to parse JSON error body safely
+        let errorMsg = "Failed to create user. Please try again.";
+        try {
+          const error = await response.json();
+          errorMsg = error?.error || error?.message || errorMsg;
+        } catch (e) {
+          // ignore JSON parse errors and keep default message
+        }
+
         toast({
           title: "Error Creating User",
-          description: error.error || "Failed to create user. Please try again.",
+          description: errorMsg,
           variant: "destructive",
         });
       }
