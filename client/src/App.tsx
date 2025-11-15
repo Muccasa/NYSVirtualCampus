@@ -16,6 +16,7 @@ import Homepage from "@/pages/Homepage";
 import Auth from "@/pages/Auth";
 import StudentDashboard from "@/pages/StudentDashboard";
 import TutorDashboard from "@/pages/TutorDashboard";
+import TutorAssignments from "@/components/TutorAssignments";
 import AdminDashboard from "@/pages/AdminDashboard";
 import CourseDetail from "@/pages/CourseDetail";
 import CourseList from "@/pages/CourseList";
@@ -27,9 +28,12 @@ import AdminUploads from "@/pages/AdminUploads";
 import ManageAssignments from "@/pages/ManageAssignments";
 import TutorGrades from "@/pages/TutorGrades";
 import Announcements, { type Announcement } from "@/pages/Announcements";
+import SubmissionsPage from "@/pages/Submissions";
 import { useAuth } from "@/lib/useAuth";
+import { assignmentsApi } from "@/lib/api";
 import { getCurrentUser } from '@/lib/auth';
 import LoginDialog from "@/components/LoginDialog";
+// TutorAssignments was temporarily added; navigation will render the full TutorDashboard instead.
 
 
 function App() {
@@ -43,6 +47,7 @@ function App() {
     | "assignments"
     | "announcements"
     | "students"
+    | "submissions"
     | "analytics"
     | "users"
     | "settings"
@@ -63,6 +68,7 @@ function App() {
   const [tutorGrades, setTutorGrades] = useState<(GradeRecord & { studentName: string })[]>([]);
   const [adminItems, setAdminItems] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
 
   const style = {
     "--sidebar-width": "16rem",
@@ -75,9 +81,6 @@ function App() {
     admin: "System Administrator",
   };
 
-  const handleSidebarNavigation = (page: string) => {
-    setCurrentPage(page as any);
-  };
 
   const { user, isAuthenticated, logout, refresh } = useAuth();
   // Normalize role: server may return 'lecturer' or 'tutor' for teaching staff.
@@ -89,6 +92,31 @@ function App() {
   };
 
   const view = normalizeRole(user?.role as string | undefined);
+
+  const displayName = user?.fullName ?? userNames[view];
+
+  const handleSidebarNavigation = (page: string) => {
+    // Navigate to the requested page. Do not auto-open a single assignment for tutors —
+    // clicking "Assignments" should always show the assignments list/dashboard so tutors
+    // can access all assignment management features.
+    setCurrentPage(page as any);
+  };
+
+  // Fetch authoritative assignments list from server on mount
+  const fetchAssignments = async () => {
+    try {
+      const serverAssignments = await assignmentsApi.getAll();
+      // serverAssignments may include populated course title; ensure shape matches AssignmentWithDue
+      setAssignments(Array.isArray(serverAssignments) ? serverAssignments : []);
+    } catch (err) {
+      // keep existing local assignments on failure
+      console.error('Failed to fetch assignments', err);
+      }
+    };
+
+  React.useEffect(() => {
+    fetchAssignments();
+  }, []);
 
   // Sync hash-based navigation for simple full-page auth routing (e.g. #auth)
   useEffect(() => {
@@ -113,7 +141,7 @@ function App() {
             <div className="flex h-screen w-full">
               {/* Hide sidebar on the auth page for a full-page auth experience */}
               {currentPage !== 'auth' && (
-                <AppSidebar userRole={view} userName={userNames[view]} onNavigate={handleSidebarNavigation} currentPage={currentPage} />
+                <AppSidebar userRole={view} userName={displayName} onNavigate={handleSidebarNavigation} currentPage={currentPage} />
               )}
               <div className="flex flex-col flex-1 overflow-hidden">
                 {/* Hide navigation (sidebar/header) for the full-page auth view */}
@@ -124,7 +152,7 @@ function App() {
                   {currentPage === "homepage" && (
                     <Homepage 
                       userRole={view} 
-                      userName={userNames[view]} 
+                      userName={displayName} 
                       onNavigate={handleSidebarNavigation} 
                     />
                   )}
@@ -146,16 +174,42 @@ function App() {
 
                   {currentPage === "dashboard" && (
                     <>
-                      {view === "student" && <StudentDashboard />}
+                      {view === "student" && <StudentDashboard onOpenCourse={(id: string) => { setSelectedCourseId(id); setCurrentPage('course-detail'); }} />}
                       {view === "tutor" && (
-                        <TutorDashboard onNavigate={handleSidebarNavigation} />
+                        <TutorDashboard
+                          onNavigate={handleSidebarNavigation}
+                          onOpenCourse={(id: string) => { setSelectedCourseId(id); setCurrentPage('course-detail'); }}
+                          onOpenAssignment={(id: string) => { setSelectedAssignmentId(id); setCurrentPage('assignment-detail'); }}
+                          onAddAssignment={(a: any) => setAssignments((prev) => [a, ...prev])}
+                          onUpdateAssignment={(a: any) => setAssignments((prev) => prev.map((x) => (x.id === (a.id || a._id) ? { ...x, ...a } : x)))}
+                          onDeleteAssignment={(id: string) => setAssignments((prev) => prev.filter((x) => x.id !== id))}
+                          assignmentsFromApp={assignments}
+                          onAssignmentsChange={(a: any[]) => setAssignments(a)}
+                        />
                       )}
                       {view === "admin" && <AdminDashboard />}
                     </>
                   )}
 
-                  {currentPage === "courses" && <CourseList userRole={view} />}
-                  {currentPage === "course-detail" && <CourseDetail />}
+                  {currentPage === "courses" && (view === "tutor" ? (
+                    <TutorDashboard
+                      initialTab="courses"
+                      showHeader={false}
+                      hideAssignments={true}
+                      hideStudents={true}
+                      onNavigate={handleSidebarNavigation}
+                      onOpenCourse={(id: string) => { setSelectedCourseId(id); setCurrentPage('course-detail'); }}
+                      onOpenAssignment={(id: string) => { setSelectedAssignmentId(id); setCurrentPage('assignment-detail'); }}
+                      onAddAssignment={(a: any) => setAssignments((prev) => [a, ...prev])}
+                      onUpdateAssignment={(a: any) => setAssignments((prev) => prev.map((x) => (x.id === (a.id || a._id) ? { ...x, ...a } : x)))}
+                      onDeleteAssignment={(id: string) => setAssignments((prev) => prev.filter((x) => ((x as any).id !== id && (x as any)._id !== id)))}
+                      assignmentsFromApp={assignments}
+                      onAssignmentsChange={(a: any[]) => setAssignments(a)}
+                    />
+                  ) : (
+                    <CourseList userRole={view} />
+                  ))}
+                  {currentPage === "course-detail" && <CourseDetail courseId={selectedCourseId || undefined} />}
                   {(view === "tutor" || view === "admin") && currentPage === "create-course" && (
                     <CreateCourse
                       onCancel={() => setCurrentPage("dashboard")}
@@ -178,24 +232,30 @@ function App() {
                   {view === "tutor" && currentPage === "create-assignment" && (
                     <CreateAssignment
                       onCancel={() => setCurrentPage("dashboard")}
-                      onCreated={(draft: AssignmentDraft) => {
-                        const newAssignment: AssignmentWithDue = {
-                          id: `${Date.now()}`,
-                          courseId: draft.courseId,
-                          title: draft.title,
-                          type: draft.type,
-                          instructions: draft.instructions,
-                          questions: draft.questions.map((q) => ({ text: q.text, imageUrl: q.imageUrl, choices: q.choices })),
-                          dueDate: draft.dueDate,
-                        };
-                        setAssignments((prev) => [newAssignment, ...prev]);
+                      onCreated={async (draft: AssignmentDraft) => {
+                        // after creating an assignment, refresh authoritative list from server
+                        try {
+                          await fetchAssignments();
+                        } catch (e) {
+                          // fallback: append a lightweight local representation
+                          const newAssignment: AssignmentWithDue = {
+                            id: `${Date.now()}`,
+                            courseId: draft.courseId,
+                            title: draft.title,
+                            type: draft.type,
+                            instructions: draft.instructions,
+                            questions: draft.questions.map((q) => ({ text: q.text, imageUrl: q.imageUrl, choices: q.choices })),
+                            dueDate: draft.dueDate,
+                          };
+                          setAssignments((prev) => [newAssignment, ...prev]);
+                        }
                         setAdminItems((prev) => [
                           {
                             id: `adm-${Date.now()}`,
                             type: "assignment",
                             ownerRole: "tutor",
                             ownerName: "Dr. Sarah Kamau",
-                            description: `Assignment created: ${newAssignment.title}`,
+                            description: `Assignment created: ${draft.title}`,
                             createdAt: new Date().toISOString(),
                           },
                           ...prev,
@@ -224,6 +284,9 @@ function App() {
                       }}
                     />
                   )}
+                    {(view === "tutor" || view === "admin") && currentPage === "submissions" && (
+                      <SubmissionsPage />
+                    )}
                   {view === "tutor" && currentPage === "tutor-grades" && (
                     <TutorGrades
                       grades={tutorGrades}
@@ -249,7 +312,7 @@ function App() {
                       items={announcements}
                       canPost={view !== "student"}
                       authorRole={view === "admin" ? "admin" : view === "tutor" ? "tutor" : undefined}
-                      authorName={userNames[view]}
+                      authorName={displayName}
                       onPost={(a) => {
                         setAnnouncements((prev) => [a, ...prev]);
                         setAdminItems((prev) => [
@@ -367,6 +430,31 @@ function App() {
                       );
                     })()
                   )}
+                  {view === "tutor" && currentPage === "assignment-detail" && selectedAssignmentId && (
+                    (() => {
+                      const a = assignments.find((x) => x.id === selectedAssignmentId)!;
+                      if (!a) return null;
+                      return (
+                        <AssignmentDetail
+                          assignment={a}
+                          onSubmit={() => {
+                            // Record that some action happened; tutors won't 'submit' but keep analytics
+                            setAdminItems((prev) => [
+                              {
+                                id: `adm-action-${Date.now()}`,
+                                type: "assignment",
+                                ownerRole: "tutor",
+                                ownerName: "Dr. Sarah Kamau",
+                                description: `Viewed assignment: ${a.title}`,
+                                createdAt: new Date().toISOString(),
+                              },
+                              ...prev,
+                            ]);
+                          }}
+                        />
+                      );
+                    })()
+                  )}
                   {view === "student" && currentPage === "student-grades" && (
                     <StudentGrades grades={grades} />
                   )}
@@ -406,17 +494,41 @@ function App() {
 
                   {/* Tutor specific pages */}
                   {view === "tutor" && currentPage === "assignments" && (
-                    <div className="space-y-6">
-                      <h1 className="text-2xl font-bold">Assignment Management</h1>
-                      <p className="text-muted-foreground">Create and manage assignments for your students.</p>
-                    </div>
+                    <TutorDashboard
+                      initialTab="assignments"
+                      showHeader={false}
+                      hideCourses={true}
+                      hideStudents={true}
+                      hideContent={true}
+                      hideAnnouncements={true}
+                      onNavigate={handleSidebarNavigation}
+                      onOpenCourse={(id: string) => { setSelectedCourseId(id); setCurrentPage('course-detail'); }}
+                      onOpenAssignment={(id: string) => { setSelectedAssignmentId(id); setCurrentPage('assignment-detail'); }}
+                      onAddAssignment={(a: any) => setAssignments((prev) => [a, ...prev])}
+                      onUpdateAssignment={(a: any) => setAssignments((prev) => prev.map((x) => (x.id === (a.id || a._id) ? { ...x, ...a } : x)))}
+                      onDeleteAssignment={(id: string) => setAssignments((prev) => prev.filter((x) => ((x as any).id !== id && (x as any)._id !== id)))}
+                      assignmentsFromApp={assignments}
+                      onAssignmentsChange={(a: any[]) => setAssignments(a)}
+                    />
                   )}
                   
                   {view === "tutor" && currentPage === "students" && (
-                    <div className="space-y-6">
-                      <h1 className="text-2xl font-bold">My Students</h1>
-                      <p className="text-muted-foreground">View and manage your students.</p>
-                    </div>
+                    <TutorDashboard
+                      initialTab="students"
+                      showHeader={false}
+                      hideCourses={true}
+                      hideAssignments={true}
+                      hideContent={true}
+                      hideAnnouncements={true}
+                      onNavigate={handleSidebarNavigation}
+                      onOpenCourse={(id: string) => { setSelectedCourseId(id); setCurrentPage('course-detail'); }}
+                      onOpenAssignment={(id: string) => { setSelectedAssignmentId(id); setCurrentPage('assignment-detail'); }}
+                      onAddAssignment={(a: any) => setAssignments((prev) => [a, ...prev])}
+                      onUpdateAssignment={(a: any) => setAssignments((prev) => prev.map((x) => (x.id === (a.id || a._id) ? { ...x, ...a } : x)))}
+                      onDeleteAssignment={(id: string) => setAssignments((prev) => prev.filter((x) => ((x as any).id !== id && (x as any)._id !== id)))}
+                      assignmentsFromApp={assignments}
+                      onAssignmentsChange={(a: any[]) => setAssignments(a)}
+                    />
                   )}
                   
                   {view === "tutor" && currentPage === "analytics" && (

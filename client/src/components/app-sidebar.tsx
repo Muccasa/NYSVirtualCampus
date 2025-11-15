@@ -54,6 +54,7 @@ export function AppSidebar({ userRole, userName, onNavigate, currentPage }: AppS
     { title: "My Courses", page: "courses", icon: GraduationCap },
     { title: "Assignments", page: "assignments", icon: ClipboardList },
     { title: "Students", page: "students", icon: Users },
+    { title: "Submissions", page: "submissions", icon: FileText },
     { title: "Analytics", page: "analytics", icon: BarChart },
   ];
 
@@ -62,6 +63,7 @@ export function AppSidebar({ userRole, userName, onNavigate, currentPage }: AppS
     { title: "Dashboard", page: "dashboard", icon: LayoutDashboard },
     { title: "Users", page: "users", icon: Users },
     { title: "Courses", page: "courses", icon: BookOpen },
+    { title: "Submissions", page: "submissions", icon: FileText },
     { title: "Analytics", page: "analytics", icon: BarChart },
     { title: "Settings", page: "settings", icon: Settings },
   ];

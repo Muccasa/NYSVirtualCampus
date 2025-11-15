@@ -26,28 +26,63 @@ function parseJwt(token?: string | null) {
   }
 }
 
-export default function CourseDetail() {
+type CourseDetailProps = {
+  courseId?: string;
+};
+
+export default function CourseDetail({ courseId }: CourseDetailProps) {
   const [course, setCourse] = useState<ApiCourse | null>(null);
   const [newChapterTitle, setNewChapterTitle] = useState("");
   const [newChapterDesc, setNewChapterDesc] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [editNotes, setEditNotes] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
+  const [editCourseMode, setEditCourseMode] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editDepartment, setEditDepartment] = useState("");
+  const [savingCourse, setSavingCourse] = useState(false);
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const currentUser = parseJwt(token);
-  const canEdit = currentUser && (currentUser.role === 'admin' || currentUser.role === 'tutor');
+  const currentUser = parseJwt(token) as any;
+  // compute canEdit after course is loaded: admin can edit any course; tutor can edit only if assigned as instructor
+  const canEdit = (() => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'admin') return true;
+    if (currentUser.role === 'tutor' && course) {
+      const instr: any = (course as any).instructorId;
+      const instrId = instr?._id || instr || '';
+      return String(instrId) === String(currentUser.userId) || String(instrId) === String(currentUser.userId || currentUser.user_id || currentUser.id);
+    }
+    return false;
+  })();
+
+  const instructorDisplay = (() => {
+    const instr: any = (course as any)?.instructorId;
+    if (!instr) return 'TBD';
+    if (typeof instr === 'string') return instr;
+    return instr.fullName || instr.name || String(instr._id || 'TBD');
+  })();
 
   useEffect(() => {
+    let mounted = true;
     (async () => {
       try {
-        const all = await coursesApi.getAll();
-        if (Array.isArray(all) && all.length > 0) {
-          setCourse(all[0] as ApiCourse);
+        if (courseId) {
+          const c = await coursesApi.getById(courseId);
+          if (!mounted) return;
+          setCourse(c as ApiCourse);
+        } else {
+          const all = await coursesApi.getAll();
+          if (!mounted) return;
+          if (Array.isArray(all) && all.length > 0) {
+            setCourse(all[0] as ApiCourse);
+          }
         }
       } catch (e) {
         console.error('Failed to load course for details', e);
       }
     })();
+    return () => { mounted = false; };
   }, []);
 
   const addChapter = async () => {
@@ -78,11 +113,55 @@ export default function CourseDetail() {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
-          <Badge className="mb-2 bg-primary">Technology</Badge>
-          <h1 className="text-3xl font-bold" data-testid="text-course-title">
-            Introduction to Computer Science
-          </h1>
-          <p className="text-sm mt-1 opacity-90">Taught by Dr. Sarah Kamau</p>
+          <div className="flex items-start justify-between">
+            <div>
+              <Badge className="mb-2 bg-primary">{course?.department || 'General'}</Badge>
+                  {!editCourseMode ? (
+                <>
+                  <h1 className="text-3xl font-bold" data-testid="text-course-title">{course?.title || 'Course'}</h1>
+                  <p className="text-sm mt-1 opacity-90">Taught by {instructorDisplay}</p>
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Course title" />
+                  <Input value={editDepartment} onChange={(e) => setEditDepartment(e.target.value)} placeholder="Department" />
+                  <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={2} placeholder="Short description" />
+                </div>
+              )}
+            </div>
+            <div className="ml-4">
+              {canEdit && !editCourseMode && (
+                <Button size="sm" variant="outline" onClick={() => {
+                  setEditCourseMode(true);
+                  setEditTitle(course?.title || '');
+                  setEditDescription(course?.description || '');
+                  setEditDepartment(course?.department || '');
+                }}>
+                  Edit Course
+                </Button>
+              )}
+              {canEdit && editCourseMode && (
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => { setEditCourseMode(false); }} disabled={savingCourse}>Cancel</Button>
+                  <Button size="sm" onClick={async () => {
+                    if (!course) return;
+                    setSavingCourse(true);
+                    try {
+                      const updated = await coursesApi.update(course.id, { title: editTitle, description: editDescription, department: editDepartment });
+                      setCourse(updated as ApiCourse);
+                      toast({ title: 'Course updated', description: 'Course details saved.' });
+                      setEditCourseMode(false);
+                    } catch (err: any) {
+                      console.error('Failed to save course', err);
+                      toast({ title: 'Save failed', description: (err && err.message) || 'Unable to save course', variant: 'destructive' });
+                    } finally {
+                      setSavingCourse(false);
+                    }
+                  }} disabled={savingCourse}>Save</Button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -31,6 +31,8 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
 export const usersApi = {
   getAll: () => apiCall('/users'),
   getByRole: (role: string) => apiCall(`/users?role=${encodeURIComponent(role)}`),
+  // Tutors and admins can fetch students via this dedicated endpoint
+  getStudents: () => apiCall('/users/students'),
   create: (userData: any) => apiCall('/users', {
     method: 'POST',
     body: JSON.stringify(userData),
@@ -52,11 +54,16 @@ export const coursesApi = {
     method: 'PUT',
     body: JSON.stringify(courseData),
   }),
+  delete: (id: string) => apiCall(`/courses/${id}`, { method: 'DELETE' }),
   enroll: (id: string, enrollEmails: string[]) => apiCall(`/courses/${id}/enroll`, {
     method: 'POST',
     body: JSON.stringify({ enrollEmails }),
   }),
   getMyEnrollments: () => apiCall('/courses'),
+  bulkTransfer: (payload: { fromCourseId: string; toCourseId: string; studentIds: string[] }) => apiCall('/courses/bulk-transfer', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
 };
 
 // Assignments API
@@ -69,18 +76,52 @@ export const assignmentsApi = {
     method: 'POST',
     body: JSON.stringify(assignmentData),
   }),
+  update: (id: string, assignmentData: any) => apiCall(`/assignments/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(assignmentData),
+  }),
+  delete: (id: string) => apiCall(`/assignments/${id}`, { method: 'DELETE' }),
   updateDueDate: (id: string, dueDate: string) => apiCall(`/assignments/${id}`, {
     method: 'PUT',
     body: JSON.stringify({ dueDate }),
   }),
 };
 
+// Uploads API (server accepts base64 payload and returns a /uploads URL)
+export const uploadsApi = {
+  upload: (file: File) => {
+    return new Promise<{ url: string }>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.onload = async () => {
+        try {
+          const dataUrl = reader.result as string;
+          // dataUrl is like 'data:<mime>;base64,<base64data>'
+          const base64 = dataUrl.split(',')[1];
+          const res = await apiCall('/uploads', {
+            method: 'POST',
+            body: JSON.stringify({ filename: file.name, contentBase64: base64 }),
+          });
+          resolve(res as { url: string });
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  },
+};
+
 // Submissions API
 export const submissionsApi = {
-  getAll: (assignmentId?: string, studentId?: string) => {
+  getAll: (opts?: { assignmentId?: string; studentId?: string; courseId?: string; status?: 'all' | 'submitted' | 'graded'; page?: number; limit?: number }) => {
     const params = new URLSearchParams();
-    if (assignmentId) params.append('assignmentId', assignmentId);
-    if (studentId) params.append('studentId', studentId);
+    if (opts?.assignmentId) params.append('assignmentId', opts.assignmentId);
+    if (opts?.studentId) params.append('studentId', opts.studentId);
+    if (opts?.courseId) params.append('courseId', opts.courseId);
+    if (opts?.status && opts.status !== 'all') params.append('status', opts.status);
+    if (opts?.page) params.append('page', String(opts.page));
+    if (opts?.limit) params.append('limit', String(opts.limit));
     const queryString = params.toString();
     return apiCall(`/submissions${queryString ? `?${queryString}` : ''}`);
   },
@@ -103,6 +144,7 @@ export const gradesApi = {
     method: 'PUT',
     body: JSON.stringify(gradeData),
   }),
+  create: (gradeData: any) => apiCall('/grades', { method: 'POST', body: JSON.stringify(gradeData) }),
 };
 
 // Announcements API
@@ -118,6 +160,7 @@ export const announcementsApi = {
     method: 'POST',
     body: JSON.stringify(announcementData),
   }),
+  delete: (id: string) => apiCall(`/announcements/${id}`, { method: 'DELETE' }),
 };
 
 // Enrollments API

@@ -3,7 +3,11 @@ import { coursesApi, ApiCourse } from "@/lib/api";
 import { CourseCard } from "@/components/CourseCard";
 import { EnrollmentDialog } from "@/components/EnrollmentDialog";
 
-export default function TutorCoursesGrid() {
+interface TutorCoursesGridProps {
+  onOpenCourse?: (id: string) => void;
+}
+
+export default function TutorCoursesGrid({ onOpenCourse }: TutorCoursesGridProps) {
   const [courses, setCourses] = useState<ApiCourse[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +53,7 @@ export default function TutorCoursesGrid() {
             enrolledCount={course.enrolledCount || 0}
             userRole="tutor"
             onManageEnrollment={() => { /* noop - EnrollmentDialog provided as child */ }}
+            onContinue={() => onOpenCourse?.(String(id))}
           >
             <EnrollmentDialog
               courseId={String(id)}

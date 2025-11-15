@@ -11,7 +11,11 @@ import businessThumbnail from "@assets/generated_images/Business_course_thumbnai
 import engineeringThumbnail from "@assets/generated_images/Engineering_course_thumbnail_06f884c3.png";
 import { usePlanNotification } from "@/components/PlanNotification";
 
-export default function StudentDashboard() {
+interface StudentDashboardProps {
+  onOpenCourse?: (id: string) => void;
+}
+
+export default function StudentDashboard({ onOpenCourse }: StudentDashboardProps) {
   const { showNotification } = usePlanNotification();
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -185,7 +189,7 @@ export default function StudentDashboard() {
                   progress={course.progress}
                   isEnrolled={true}
                   userRole="student"
-                  onContinue={() => console.log("Continue course", course.id)}
+                  onContinue={() => onOpenCourse?.(course.id)}
                 />
               ))}
             </div>

@@ -22,32 +22,36 @@ export default function Header() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-4">
         {user ? (
           <Card className="px-4 py-2 bg-white/10 border border-white/20">
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <div className="text-sm font-semibold">{user.fullName}</div>
-                <div className="text-xs text-white/80">{user.email}</div>
+            <div className="flex items-center gap-4">
+              <div className="text-left">
+                
+                <div className="text-base font-semibold text-white">{user.fullName}</div>
               </div>
-              <Badge variant="outline" className="text-sm px-3 py-1 border border-white bg-white/20 text-white font-bold capitalize">{user.role}</Badge>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  // clear auth and navigate to full-page auth (login/register)
-                  logout();
-                  refresh();
-                  try {
-                    window.location.hash = '#auth';
-                  } catch (e) {
-                    // nothing else to do; full-page auth is preferred
-                  }
-                }}
-                className="text-white"
-              >
-                Logout
-              </Button>
+              <div className="ml-2">
+                <Badge variant="outline" className="text-sm px-3 py-1 border border-white bg-white/20 text-white font-bold capitalize">{user.role}</Badge>
+              </div>
+              <div className="ml-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    // clear auth and navigate to full-page auth (login/register)
+                    logout();
+                    refresh();
+                    try {
+                      window.location.hash = '#auth';
+                    } catch (e) {
+                      // nothing else to do; full-page auth is preferred
+                    }
+                  }}
+                  className="text-white"
+                >
+                  Logout
+                </Button>
+              </div>
             </div>
           </Card>
         ) : (

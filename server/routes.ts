@@ -12,6 +12,7 @@ import {
   type AuthenticatedRequest,
   type JWTPayload 
 } from "./jwt";
+import bcrypt from 'bcrypt';
 import { nanoid } from "nanoid";
 import fs from 'fs';
 
@@ -78,9 +79,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
-      // In a real app, you'd verify the password hash
-      // For demo purposes, we'll just check if password matches
-      if (user.password !== password) {
+      // Verify password using bcrypt if stored as a hash, otherwise compare directly (backwards compat)
+      let passwordMatches = false;
+      try {
+        if (typeof user.password === 'string' && user.password.startsWith('$2')) {
+          passwordMatches = await bcrypt.compare(password, user.password);
+        } else {
+          passwordMatches = user.password === password;
+        }
+      } catch (e) {
+        console.error('Password compare failed', e);
+      }
+      if (!passwordMatches) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
@@ -131,14 +141,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const username = req.body.username || (email.includes('@') ? email.split('@')[0] : email);
 
       // Create new user with enforced role
+      const hashed = await bcrypt.hash(password, 10);
       const newUser = new User({
         username,
         email,
-        password, // In production, hash this password
+        password: hashed,
         fullName,
         role
       });
-
       await newUser.save();
 
       // Generate JWT token
@@ -179,10 +189,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Allow tutors and admins to fetch all students specifically
+  router.get('/users/students', authenticate, requireRole(['tutor','admin']), async (req, res) => {
+    try {
+      const students = await User.find({ role: 'student' }).select('-password');
+      res.json(students);
+    } catch (err) {
+      console.error('Error fetching students for tutors:', err);
+      res.status(500).json({ error: 'Failed to fetch students' });
+    }
+  });
+
   router.post("/users", authenticate, requireRole(["admin"]), async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     try {
-      const newUser = new User(req.body);
+      const payload: any = { ...req.body };
+      if (payload.password) {
+        payload.password = await bcrypt.hash(payload.password, 10);
+      }
+      const newUser = new User(payload);
       await newUser.save();
       res.json(newUser);
     } catch (error) {
@@ -289,7 +314,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
                   const placeholder = new User({
                     username,
-                    password: nanoid(10), // random password until claimed
+                    password: await bcrypt.hash(nanoid(10), 10), // random hashed password until claimed
                     email: em,
                     fullName: 'Invited Student',
                     role: 'student',
@@ -393,6 +418,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete a course (tutor or admin) - tutor must be instructor
+  router.delete('/courses/:id', authenticate, requireRole(['tutor','admin']), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    try {
+      const course = await Course.findById(req.params.id);
+      if (!course) return res.status(404).json({ error: 'Course not found' });
+
+      if (authReq.user.role !== 'admin' && course.instructorId.toString() !== authReq.user.userId) {
+        return res.status(403).json({ error: 'Only the instructor or admin may delete this course' });
+      }
+
+      await Course.findByIdAndDelete(req.params.id);
+      // Optionally remove related enrollments, assignments
+      await Enrollment.deleteMany({ courseId: req.params.id });
+      await Assignment.deleteMany({ courseId: req.params.id });
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Failed to delete course', err);
+      res.status(500).json({ error: 'Failed to delete course' });
+    }
+  });
+
   // Enroll students into an existing course by email (tutor or admin)
   router.post('/courses/:id/enroll', authenticate, requireRole(['tutor','admin']), async (req, res) => {
     try {
@@ -430,7 +477,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
               const placeholder = new User({
                 username,
-                password: nanoid(10),
+                password: await bcrypt.hash(nanoid(10), 10),
                 email: em,
                 fullName: 'Invited Student',
                 role: 'student',
@@ -470,6 +517,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error('Error enrolling students', err);
       res.status(500).json({ error: 'Failed to enroll students' });
+    }
+  });
+
+  // Bulk transfer students from one course to another (tutor or admin)
+  router.post('/courses/bulk-transfer', authenticate, requireRole(['tutor','admin']), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    try {
+      const { fromCourseId, toCourseId, studentIds } = req.body as { fromCourseId?: string; toCourseId?: string; studentIds?: string[] };
+      if (!fromCourseId || !toCourseId || !Array.isArray(studentIds) || studentIds.length === 0) {
+        return res.status(400).json({ error: 'fromCourseId, toCourseId and studentIds[] are required' });
+      }
+
+      const fromCourse = await Course.findById(fromCourseId);
+      const toCourse = await Course.findById(toCourseId);
+      if (!fromCourse || !toCourse) return res.status(404).json({ error: 'Course not found' });
+
+      // Optionally enforce that tutors must be instructor of at least one of the courses
+      if (authReq.user.role !== 'admin') {
+        const isInstructorOfFrom = fromCourse.instructorId.toString() === authReq.user.userId;
+        const isInstructorOfTo = toCourse.instructorId.toString() === authReq.user.userId;
+        if (!isInstructorOfFrom && !isInstructorOfTo) {
+          // If the tutor isn't instructor of either course, deny for safety
+          return res.status(403).json({ error: 'Tutors may only transfer students between courses they instruct' });
+        }
+      }
+
+      const results: { transferred: string[]; skipped: string[]; errors: string[] } = { transferred: [], skipped: [], errors: [] };
+
+      for (const sid of studentIds) {
+        try {
+          const student = await User.findById(sid);
+          if (!student) {
+            results.errors.push(sid);
+            continue;
+          }
+
+          // Remove enrollment from source if exists
+          await Enrollment.deleteMany({ courseId: fromCourseId, studentId: student._id });
+
+          // Create enrollment in destination if not exists
+          const existing = await Enrollment.findOne({ courseId: toCourseId, studentId: student._id });
+          if (existing) {
+            results.skipped.push(sid);
+            continue;
+          }
+
+          const enrollment = new Enrollment({ courseId: toCourseId, studentId: student._id });
+          await enrollment.save();
+          results.transferred.push(sid);
+        } catch (e) {
+          console.error('Error transferring student', sid, e);
+          results.errors.push(sid);
+        }
+      }
+
+      res.json({ success: true, results });
+    } catch (err) {
+      console.error('Bulk transfer failed', err);
+      res.status(500).json({ error: 'Bulk transfer failed' });
     }
   });
 
@@ -566,10 +672,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   router.put("/assignments/:id", authenticate, requireRole(["tutor", "admin"]), async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     try {
-      const { dueDate } = req.body;
+      // Allow updating of common assignment fields: title, instructions, questions, dueDate, attachments, type, isActive, maxScore
+      const updatable: any = {};
+      const allowed = ['title', 'instructions', 'questions', 'dueDate', 'attachments', 'type', 'isActive', 'maxScore'];
+      allowed.forEach((k) => {
+        if (req.body[k] !== undefined) updatable[k] = req.body[k];
+      });
+
       const updatedAssignment = await Assignment.findByIdAndUpdate(
         req.params.id,
-        { dueDate },
+        updatable,
         { new: true }
       );
       
@@ -581,6 +693,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating assignment:", error);
       res.status(500).json({ error: "Failed to update assignment" });
+    }
+  });
+
+  // Delete an assignment (tutor or admin) - tutor must be instructor for the course
+  router.delete('/assignments/:id', authenticate, requireRole(['tutor','admin']), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    try {
+      const assignment = await Assignment.findById(req.params.id).populate('courseId');
+      if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+
+      // If tutor, ensure they are the instructor of the assignment's course
+      if (authReq.user.role !== 'admin') {
+        const course = assignment.courseId as any;
+        if (!course || course.instructorId.toString() !== authReq.user.userId) {
+          return res.status(403).json({ error: 'Only the course instructor or admin can delete this assignment' });
+        }
+      }
+
+      await Assignment.findByIdAndDelete(req.params.id);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Failed to delete assignment', err);
+      res.status(500).json({ error: 'Failed to delete assignment' });
     }
   });
 
@@ -603,20 +738,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
   router.get("/submissions", authenticate, async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     try {
-      const { assignmentId, studentId } = req.query;
-      let query: any = {};
-      
-      if (assignmentId) {
-        query.assignmentId = assignmentId;
+      const { assignmentId, studentId, courseId, status, page = '1', limit = '20' } = req.query as any;
+
+      const pg = Math.max(1, parseInt(page, 10) || 1);
+      const lim = Math.max(1, Math.min(200, parseInt(limit, 10) || 20));
+
+      const mongoose = require('mongoose');
+
+      // Build aggregation pipeline
+      const pipeline: any[] = [];
+
+      // initial match on submission-level fields
+      const match: any = {};
+      if (assignmentId) match.assignmentId = mongoose.Types.ObjectId(assignmentId);
+      if (studentId) match.studentId = mongoose.Types.ObjectId(studentId);
+      if (Object.keys(match).length) pipeline.push({ $match: match });
+
+      // lookup assignment
+      pipeline.push(
+        { $lookup: { from: 'assignments', localField: 'assignmentId', foreignField: '_id', as: 'assignment' } },
+        { $unwind: { path: '$assignment', preserveNullAndEmptyArrays: true } },
+        { $lookup: { from: 'courses', localField: 'assignment.courseId', foreignField: '_id', as: 'course' } },
+        { $unwind: { path: '$course', preserveNullAndEmptyArrays: true } },
+        { $lookup: { from: 'users', localField: 'studentId', foreignField: '_id', as: 'student' } },
+        { $unwind: { path: '$student', preserveNullAndEmptyArrays: true } },
+        // lookup grade for this assignment+student
+        { $lookup: {
+            from: 'grades',
+            let: { aId: '$assignment._id', sId: '$student._id' },
+            pipeline: [
+              { $match: { $expr: { $and: [ { $eq: ['$assignmentId', '$$aId'] }, { $eq: ['$studentId', '$$sId'] } ] } } },
+              { $sort: { gradedAt: -1 } },
+            ],
+            as: 'grade'
+        } },
+        { $unwind: { path: '$grade', preserveNullAndEmptyArrays: true } }
+      );
+
+      // filter by courseId if provided
+      if (courseId) {
+        pipeline.push({ $match: { 'assignment.courseId': mongoose.Types.ObjectId(courseId) } });
       }
-      if (studentId) {
-        query.studentId = studentId;
+
+      // Enforce tutor access: only submissions for courses they instruct
+      if (authReq.user.role === 'tutor') {
+        pipeline.push({ $match: { 'course.instructorId': mongoose.Types.ObjectId(authReq.user.userId) } });
       }
-      
-      const allSubmissions = await Submission.find(query)
-        .populate('assignmentId', 'title')
-        .populate('studentId', 'fullName');
-      res.json(allSubmissions);
+
+      // filter by status if requested
+      if (status && typeof status === 'string') {
+        if (status === 'submitted') pipeline.push({ $match: { 'grade': { $exists: false } } });
+        if (status === 'graded') pipeline.push({ $match: { 'grade': { $exists: true } } });
+      }
+
+      // Sorting (newest submissions first)
+      pipeline.push({ $sort: { submittedAt: -1 } });
+
+      // Facet for pagination + total
+      pipeline.push({ $facet: {
+        metadata: [ { $count: 'total' } ],
+        data: [ { $skip: (pg - 1) * lim }, { $limit: lim } ]
+      } });
+
+      const agg = await Submission.aggregate(pipeline).exec();
+      const metadata = (agg[0]?.metadata && agg[0].metadata[0]) || { total: 0 };
+      const data = agg[0]?.data || [];
+
+      // Map results to a simpler shape
+      const items = data.map((d: any) => ({
+        _id: d._id,
+        assignment: d.assignment || null,
+        course: d.course || null,
+        student: d.student || null,
+        answers: d.answers || {},
+        uploadLink: d.uploadLink || null,
+        submittedAt: d.submittedAt || d.createdAt,
+        grade: d.grade || null,
+      }));
+
+      res.json({ items, total: metadata.total || 0, page: pg, limit: lim });
     } catch (error) {
       console.error("Error fetching submissions:", error);
       res.status(500).json({ error: "Failed to fetch submissions" });
@@ -626,7 +826,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   router.post("/submissions", authenticate, requireRole(["student"]), async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     try {
-      const newSubmission = new Submission(req.body);
+      // Force studentId to the authenticated user to prevent spoofing
+      const submissionPayload = { ...req.body, studentId: authReq.user.userId };
+      const newSubmission = new Submission(submissionPayload);
       await newSubmission.save();
       
       // Auto-grade if assignment type is "auto"
@@ -674,6 +876,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching grades:", error);
       res.status(500).json({ error: "Failed to fetch grades" });
+    }
+  });
+
+  router.post("/grades", authenticate, requireRole(["tutor", "admin"]), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    try {
+      const { assignmentId, studentId, score, maxScore, feedback } = req.body;
+      if (!assignmentId || !studentId || score === undefined || maxScore === undefined) {
+        return res.status(400).json({ error: 'assignmentId, studentId, score and maxScore are required' });
+      }
+
+      const grade = new Grade({
+        assignmentId,
+        studentId,
+        score,
+        maxScore,
+        status: 'graded',
+        feedback: feedback || '',
+        gradedBy: authReq.user.userId,
+        gradedAt: new Date(),
+      });
+      await grade.save();
+      await grade.populate('assignmentId', 'title');
+      await grade.populate('studentId', 'fullName');
+      await grade.populate('gradedBy', 'fullName');
+      res.json(grade);
+    } catch (error) {
+      console.error('Error creating grade:', error);
+      res.status(500).json({ error: 'Failed to create grade' });
     }
   });
 
@@ -732,13 +963,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   router.post("/announcements", authenticate, requireRole(["tutor", "admin"]), async (req, res) => {
     const authReq = req as AuthenticatedRequest;
     try {
-      const newAnnouncement = new Announcement(req.body);
+      // Ensure authorId comes from the authenticated user
+      const payload: any = { ...req.body, authorId: authReq.user.userId };
+      // If a client passed isGlobal as truthy and courseId empty, normalize
+      if (!payload.courseId) payload.isGlobal = true;
+      const newAnnouncement = new Announcement(payload);
       await newAnnouncement.save();
       await newAnnouncement.populate('authorId', 'fullName');
+      await newAnnouncement.populate('courseId', 'title');
       res.json(newAnnouncement);
     } catch (error) {
       console.error("Error creating announcement:", error);
       res.status(500).json({ error: "Failed to create announcement" });
+    }
+  });
+
+  // Delete an announcement (tutor or admin) - tutors may delete their own announcements, admins can delete any
+  router.delete('/announcements/:id', authenticate, requireRole(['tutor','admin']), async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    try {
+      const announcement = await Announcement.findById(req.params.id);
+      if (!announcement) return res.status(404).json({ error: 'Announcement not found' });
+
+      if (authReq.user.role !== 'admin' && announcement.authorId.toString() !== authReq.user.userId) {
+        return res.status(403).json({ error: 'Only the author or admin may delete this announcement' });
+      }
+
+      await Announcement.findByIdAndDelete(req.params.id);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Failed to delete announcement', err);
+      res.status(500).json({ error: 'Failed to delete announcement' });
     }
   });
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { assignmentsApi } from "@/lib/api";
+import { assignmentsApi, coursesApi, ApiCourse } from "@/lib/api";
 
 type Question = {
   text: string;
@@ -31,11 +31,12 @@ type Props = {
   onCancel?: () => void;
   onCreated?: (assignment: AssignmentDraft) => void;
   courseId?: string;
+  initialAssignment?: AssignmentDraft;
+  onUpdated?: (assignment: AssignmentDraft) => void;
 };
-
-export default function CreateAssignment({ onCancel, onCreated, courseId }: Props) {
+export default function CreateAssignment({ onCancel, onCreated, courseId, initialAssignment, onUpdated }: Props) {
   const { toast } = useToast();
-  const [draft, setDraft] = useState<AssignmentDraft>({
+  const [draft, setDraft] = useState<AssignmentDraft>(() => initialAssignment ? ({ ...initialAssignment }) : ({
     courseId: courseId || "",
     title: "",
     type: "auto",
@@ -43,10 +44,33 @@ export default function CreateAssignment({ onCancel, onCreated, courseId }: Prop
     dueDate: "",
     questions: [{ text: "", imageUrl: "", choices: [""], correctAnswer: "" }],
     attachments: [""],
-  });
+  }));
 
   const setField = <K extends keyof AssignmentDraft>(key: K, value: AssignmentDraft[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
+
+  const [tutorCourses, setTutorCourses] = useState<ApiCourse[]>([]);
+
+  useEffect(() => {
+    // load the tutor's courses so they can pick one when creating an assignment
+    let mounted = true;
+    coursesApi.getMine()
+      .then((res: any) => {
+        if (!mounted) return;
+        const raw = res || [];
+        // Normalize server response: some endpoints return Mongo docs with `_id` instead of `id`.
+        const cs = raw.map((c: any) => ({ ...(c || {}), id: c.id || c._id }));
+        setTutorCourses(cs);
+        // if tutor has exactly one course, pre-select it to reduce friction
+        if (cs.length === 1 && !draft.courseId) {
+          setField("courseId", cs[0].id);
+        }
+      })
+      .catch(() => {
+        // ignore errors here; create flow will surface server errors on submit
+      });
+    return () => { mounted = false };
+  }, []);
 
   const addQuestion = () => setField("questions", [...draft.questions, { text: "", imageUrl: "", choices: [""], correctAnswer: "" }]);
   const removeQuestion = (idx: number) => setField("questions", draft.questions.filter((_, i) => i !== idx));
@@ -72,25 +96,42 @@ export default function CreateAssignment({ onCancel, onCreated, courseId }: Prop
 
   const handleCreate = async () => {
     try {
+      // Basic client-side validation: ensure a course is selected and questions are valid.
+      if (!draft.courseId) {
+        toast({ title: 'Missing course', description: 'Please select a course for this assignment', variant: 'destructive' });
+        return;
+      }
+
+      const questionsPayload = (draft.questions || [])
+        .map((q) => ({
+          text: q.text?.trim() || "",
+          imageUrl: q.imageUrl?.trim() || undefined,
+          choices: (q.choices || []).map((c) => c.trim()).filter(Boolean),
+          correctAnswer: q.correctAnswer?.trim() || undefined,
+        }))
+        // remove any empty-question entries (server requires question.text when present)
+        .filter((q) => q.text.length > 0);
+
       const assignmentData = {
         courseId: draft.courseId,
-        title: draft.title,
+        title: draft.title.trim(),
         type: draft.type,
-        instructions: draft.instructions,
+        instructions: draft.instructions.trim(),
         dueDate: draft.dueDate ? new Date(draft.dueDate).toISOString() : undefined,
-        questions: draft.questions.map((q) => ({
-          text: q.text,
-          imageUrl: q.imageUrl?.trim() || undefined,
-          choices: (q.choices || []).filter(Boolean),
-          correctAnswer: q.correctAnswer?.trim() || undefined,
-        })),
+        questions: questionsPayload,
         attachments: (draft.attachments || []).filter(Boolean),
         maxScore: 100,
       };
-      
-      const newAssignment = await assignmentsApi.create(assignmentData);
-      toast({ title: "Assignment created", description: "Your assignment has been created successfully." });
-      onCreated?.(newAssignment as AssignmentDraft);
+      if (initialAssignment && (initialAssignment.id || (initialAssignment as any)._id)) {
+        const id = (initialAssignment as any).id || (initialAssignment as any)._id;
+        const updated = await assignmentsApi.update(id, assignmentData);
+        toast({ title: "Assignment updated", description: "Assignment updated successfully." });
+        onUpdated?.(updated as AssignmentDraft);
+      } else {
+        const newAssignment = await assignmentsApi.create(assignmentData);
+        toast({ title: "Assignment created", description: "Your assignment has been created successfully." });
+        onCreated?.(newAssignment as AssignmentDraft);
+      }
     } catch (error) {
       toast({ 
         title: "Error", 
@@ -106,11 +147,24 @@ export default function CreateAssignment({ onCancel, onCreated, courseId }: Prop
         <CardHeader>
           <CardTitle>Create Assignment</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="courseId">Course ID</Label>
-              <Input id="courseId" value={draft.courseId} onChange={(e) => setField("courseId", e.target.value)} placeholder="e.g. 1" />
+              <Label htmlFor="courseId">Course</Label>
+              {tutorCourses.length > 0 ? (
+                <Select value={draft.courseId ?? ""} onValueChange={(v: string) => setField("courseId", v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select course" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tutorCourses.map((c: ApiCourse) => (
+                      <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input id="courseId" value={draft.courseId} onChange={(e) => setField("courseId", e.target.value)} placeholder="No courses found. Create a course first" />
+              )}
             </div>
             <div>
               <Label htmlFor="title">Title</Label>
@@ -118,7 +172,7 @@ export default function CreateAssignment({ onCancel, onCreated, courseId }: Prop
             </div>
             <div>
               <Label>Type</Label>
-              <Select value={draft.type} onValueChange={(v: "auto" | "upload") => setField("type", v)}>
+              <Select value={draft.type ?? "auto"} onValueChange={(v: "auto" | "upload") => setField("type", v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
@@ -200,7 +254,9 @@ export default function CreateAssignment({ onCancel, onCreated, courseId }: Prop
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onCancel}>Cancel</Button>
-            <Button onClick={handleCreate} data-testid="button-create-assignment">Create Assignment</Button>
+            <Button onClick={handleCreate} data-testid="button-create-assignment" disabled={!draft.courseId}>
+              {initialAssignment ? 'Save' : 'Create Assignment'}
+            </Button>
           </div>
         </CardContent>
       </Card>

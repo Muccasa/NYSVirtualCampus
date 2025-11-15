@@ -19,6 +19,7 @@ async function run() {
   await mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
   console.log('Connected to', MONGODB_URI);
 
+  const bcrypt = require('bcrypt');
   const userSchema = new mongoose.Schema({ username: String, password: String, email: String, fullName: String, role: String }, { timestamps: true });
   const User = mongoose.model('User_createUserScript', userSchema, 'users');
 
@@ -30,7 +31,8 @@ async function run() {
     process.exit(0);
   }
 
-  const u = new User({ username, email, password, fullName, role });
+  const hashed = await bcrypt.hash(password, 10);
+  const u = new User({ username, email, password: hashed, fullName, role });
   await u.save();
   console.log('Created user', email, 'with role', role);
   process.exit(0);
