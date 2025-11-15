@@ -838,7 +838,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const score = Object.values(req.body.answers || {}).filter((answer: any) => answer.trim()).length;
         const newGrade = new Grade({
           assignmentId: req.body.assignmentId,
-          studentId: req.body.studentId,
+          // attribute grade to the authenticated student (or the saved submission studentId)
+          studentId: (newSubmission as any).studentId || authReq.user.userId,
           score,
           maxScore: assignment.maxScore || 100,
           status: "graded",

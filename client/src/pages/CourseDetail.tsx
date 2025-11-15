@@ -6,11 +6,13 @@ import { Progress } from "@/components/ui/progress";
 import { MaterialCard } from "@/components/MaterialCard";
 import { AssignmentCard } from "@/components/AssignmentCard";
 import { AnnouncementCard } from "@/components/AnnouncementCard";
-import { BookOpen, Users, Clock, Award } from "lucide-react";
+import { BookOpen, Users, Clock, Award, Edit, Trash2 } from "lucide-react";
 import techThumbnail from "@assets/generated_images/Technology_course_thumbnail_5e4c2c8c.png";
 import { useEffect, useState } from "react";
-import { coursesApi, ApiCourse } from "@/lib/api";
-import { toast } from "@/hooks/use-toast";
+import { coursesApi, assignmentsApi, ApiCourse } from "@/lib/api";
+import CreateAssignment, { type AssignmentDraft } from "./CreateAssignment";
+import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus } from "lucide-react";
@@ -42,6 +44,11 @@ export default function CourseDetail({ courseId }: CourseDetailProps) {
   const [editDescription, setEditDescription] = useState("");
   const [editDepartment, setEditDepartment] = useState("");
   const [savingCourse, setSavingCourse] = useState(false);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [isEditAssignmentOpen, setIsEditAssignmentOpen] = useState(false);
+  const [isCreateAssignmentOpen, setIsCreateAssignmentOpen] = useState(false);
+  const [editAssignmentDraft, setEditAssignmentDraft] = useState<AssignmentDraft | null>(null);
+  const { toast: toastHook } = useToast();
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   const currentUser = parseJwt(token) as any;
   // compute canEdit after course is loaded: admin can edit any course; tutor can edit only if assigned as instructor
@@ -50,8 +57,9 @@ export default function CourseDetail({ courseId }: CourseDetailProps) {
     if (currentUser.role === 'admin') return true;
     if (currentUser.role === 'tutor' && course) {
       const instr: any = (course as any).instructorId;
-      const instrId = instr?._id || instr || '';
-      return String(instrId) === String(currentUser.userId) || String(instrId) === String(currentUser.userId || currentUser.user_id || currentUser.id);
+      const instrId = instr ? String(instr.id || instr._id || instr) : '';
+      const curId = String(currentUser.userId || currentUser.user_id || currentUser.id);
+      return instrId === curId;
     }
     return false;
   })();
@@ -71,6 +79,13 @@ export default function CourseDetail({ courseId }: CourseDetailProps) {
           const c = await coursesApi.getById(courseId);
           if (!mounted) return;
           setCourse(c as ApiCourse);
+          // load assignments for this course
+          try {
+            const ares = await assignmentsApi.getAll(String((c as any)._id || (c as any).id));
+            if (mounted) setAssignments(Array.isArray(ares) ? ares : []);
+          } catch (e) {
+            console.error('Failed to load assignments for course', e);
+          }
         } else {
           const all = await coursesApi.getAll();
           if (!mounted) return;
@@ -149,11 +164,11 @@ export default function CourseDetail({ courseId }: CourseDetailProps) {
                     try {
                       const updated = await coursesApi.update(course.id, { title: editTitle, description: editDescription, department: editDepartment });
                       setCourse(updated as ApiCourse);
-                      toast({ title: 'Course updated', description: 'Course details saved.' });
+                      toastHook({ title: 'Course updated', description: 'Course details saved.' });
                       setEditCourseMode(false);
                     } catch (err: any) {
                       console.error('Failed to save course', err);
-                      toast({ title: 'Save failed', description: (err && err.message) || 'Unable to save course', variant: 'destructive' });
+                      toastHook({ title: 'Save failed', description: (err && err.message) || 'Unable to save course', variant: 'destructive' });
                     } finally {
                       setSavingCourse(false);
                     }
@@ -259,11 +274,11 @@ export default function CourseDetail({ courseId }: CourseDetailProps) {
                       setSavingNotes(true);
                       const updated = await coursesApi.update(course.id, { notes: editNotes });
                       setCourse(updated as ApiCourse);
-                      toast({ title: 'Notes saved', description: 'Course notes updated successfully.' });
+                      toastHook({ title: 'Notes saved', description: 'Course notes updated successfully.' });
                       setEditMode(false);
                     } catch (err: any) {
                       console.error('Failed to save notes', err);
-                      toast({ title: 'Save failed', description: (err && err.message) || 'Unable to save notes', variant: 'destructive' });
+                      toastHook({ title: 'Save failed', description: (err && err.message) || 'Unable to save notes', variant: 'destructive' });
                     } finally {
                       setSavingNotes(false);
                     }
@@ -366,24 +381,100 @@ export default function CourseDetail({ courseId }: CourseDetailProps) {
         </TabsContent>
 
         <TabsContent value="assignments" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <AssignmentCard
-              id="1"
-              title="Database Design Project"
-              courseName="Introduction to Computer Science"
-              dueDate={tomorrow}
-              status="pending"
-              onSubmit={() => console.log("Submit assignment")}
-            />
-            <AssignmentCard
-              id="2"
-              title="SQL Query Optimization"
-              courseName="Introduction to Computer Science"
-              dueDate={today}
-              status="graded"
-              grade={92}
-              onView={() => console.log("View submission")}
-            />
+          <div className="space-y-4">
+            {canEdit && (
+              <div className="flex justify-end">
+                <Dialog open={isCreateAssignmentOpen} onOpenChange={setIsCreateAssignmentOpen}>
+                  <DialogTrigger asChild>
+                    <Button onClick={() => setIsCreateAssignmentOpen(true)}><Plus className="mr-2 h-4 w-4" />Create Assignment</Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle>Create Assignment</DialogTitle>
+                    </DialogHeader>
+                    <CreateAssignment
+                      onCancel={() => setIsCreateAssignmentOpen(false)}
+                      onCreated={async (a) => {
+                        // refresh assignments list
+                        try {
+                          const list = await assignmentsApi.getAll(String(course?.id || (course as any)?._id));
+                          setAssignments(Array.isArray(list) ? list : []);
+                        } catch (e) { console.error(e); }
+                        setIsCreateAssignmentOpen(false);
+                        toastHook({ title: 'Assignment created', description: 'Assignment was added.' });
+                      }}
+                    />
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
+
+            {assignments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No assignments yet.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {assignments.map((a) => (
+                  <div key={(a.id || a._id)} className="relative">
+                    <AssignmentCard
+                      id={a.id || a._id}
+                      title={a.title}
+                      courseName={course?.title || ''}
+                      dueDate={a.dueDate ? new Date(a.dueDate) : new Date()}
+                      status={a.status || 'pending'}
+                      grade={a.grade}
+                      onView={() => console.log('View submission')}
+                    />
+                    {canEdit && (
+                      <div className="absolute top-2 right-2 flex gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => { setEditAssignmentDraft(a); setIsEditAssignmentOpen(true); }}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={async () => {
+                          if (!confirm('Delete this assignment?')) return;
+                          try {
+                            await assignmentsApi.delete(a.id || a._id);
+                            setAssignments((prev) => prev.filter((x) => (x.id || x._id) !== (a.id || a._id)));
+                            toastHook({ title: 'Deleted', description: 'Assignment deleted.' });
+                          } catch (err: any) {
+                            console.error('Failed to delete assignment', err);
+                            toastHook({ title: 'Delete failed', description: err?.message || 'Unable to delete', variant: 'destructive' });
+                          }
+                        }}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Edit dialog (re-uses CreateAssignment for updating) */}
+            <Dialog open={isEditAssignmentOpen} onOpenChange={setIsEditAssignmentOpen}>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>{editAssignmentDraft ? 'Edit Assignment' : 'Create Assignment'}</DialogTitle>
+                </DialogHeader>
+                {editAssignmentDraft ? (
+                  <CreateAssignment
+                    initialAssignment={editAssignmentDraft as AssignmentDraft}
+                    onCancel={() => { setIsEditAssignmentOpen(false); setEditAssignmentDraft(null); }}
+                    onUpdated={async (updated) => {
+                      // refresh assignments list
+                      try {
+                        const list = await assignmentsApi.getAll(String(course?.id || (course as any)?._id));
+                        setAssignments(Array.isArray(list) ? list : []);
+                      } catch (e) { console.error(e); }
+                      setIsEditAssignmentOpen(false);
+                      setEditAssignmentDraft(null);
+                      toastHook({ title: 'Assignment updated', description: 'Saved changes.' });
+                    }}
+                  />
+                ) : (
+                  <div />
+                )}
+              </DialogContent>
+            </Dialog>
           </div>
         </TabsContent>
 

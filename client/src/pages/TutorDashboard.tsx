@@ -15,6 +15,17 @@ import TutorCoursesGrid from "@/components/TutorCoursesGrid";
 import CreateAssignment, { AssignmentDraft } from "./CreateAssignment";
 import CreateCourse from "./CreateCourse";
 
+function parseJwt(token?: string | null) {
+  if (!token) return null;
+  try {
+    const payload = token.split('.')[1];
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    return decoded;
+  } catch (e) {
+    return null;
+  }
+}
+
 type TutorDashboardProps = {
   onNavigate?: (page: string) => void;
   onOpenCourse?: (id: string) => void;
@@ -118,6 +129,21 @@ export default function TutorDashboard({ onNavigate, onOpenCourse, onOpenAssignm
   const [isTransferring, setIsTransferring] = useState(false);
 
   const [enrollStudent, setEnrollStudent] = useState({ courseId: "", email: "", name: "" });
+
+  // assignments filter (by course) for the Assignments tab
+  const [assignmentCourseFilter, setAssignmentCourseFilter] = useState<string>(() => {
+    try {
+      if (typeof window !== 'undefined') return window.localStorage.getItem('assignmentCourseFilter') || 'all';
+    } catch (e) {}
+    return 'all';
+  });
+
+  // deadline filter: all | upcoming | past | noduedate
+  const [assignmentDeadlineFilter, setAssignmentDeadlineFilter] = useState<string>('all');
+
+  // determine current user (role) so we can hide deadline from students and show edit/delete only to tutors/admins
+  const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null;
+  const currentUser = parseJwt(token) as any;
 
   
 
@@ -296,8 +322,16 @@ export default function TutorDashboard({ onNavigate, onOpenCourse, onOpenAssignm
     }
   };
 
-  const getStudentsForCourse = (courseId: string) => students.filter((s) => s.courseId === courseId);
-  const getAssignmentsForCourse = (courseId: string) => assignments.filter((a) => a.courseId === courseId);
+  const getStudentsForCourse = (courseId: string) => students.filter((s) => String(s.courseId) === String(courseId));
+  // Simplified and robust matching: coerce both sides to strings. assignments[].courseId is normalized when assignments are loaded.
+  const getAssignmentsForCourse = (courseId: string) => assignments.filter((a) => {
+    if (!a) return false;
+    try {
+      return String((a as any).courseId || '') === String(courseId || '');
+    } catch (e) {
+      return false;
+    }
+  });
   const getModulesForCourse = (courseId: string) => modules.filter((m) => m.courseId === courseId);
 
   // Load all courses and all students so tutors can access every student in the system
@@ -309,7 +343,8 @@ export default function TutorDashboard({ onNavigate, onOpenCourse, onOpenAssignm
       .then((res: any) => {
         if (!mounted) return;
         const raw = Array.isArray(res) ? res : [];
-        const cs = raw.map((c: any) => ({ ...(c || {}), id: c.id || c._id }));
+        // normalize course id to string to avoid mismatches with ObjectId or populated shapes
+        const cs = raw.map((c: any) => ({ ...(c || {}), id: String(c.id || c._id) }));
         setAllCourses(cs);
       })
       .catch(() => {});
@@ -319,7 +354,8 @@ export default function TutorDashboard({ onNavigate, onOpenCourse, onOpenAssignm
       .then((res: any) => {
         if (!mounted) return;
         const raw = Array.isArray(res) ? res : [];
-        const us = raw.map((u: any) => ({ ...(u || {}), id: u.id || u._id }));
+        // normalize student id to string
+        const us = raw.map((u: any) => ({ ...(u || {}), id: String(u.id || u._id) }));
         setStudents(us);
       })
       .catch(() => {});
@@ -330,7 +366,21 @@ export default function TutorDashboard({ onNavigate, onOpenCourse, onOpenAssignm
         const mine = await coursesApi.getMine();
         if (!mounted) return;
         const raw = Array.isArray(mine) ? mine : [];
-        setCourses(raw.map((c: any) => ({ ...(c || {}), id: c.id || c._id })));
+        // normalize course id to string
+        setCourses(raw.map((c: any) => ({ ...(c || {}), id: String(c.id || c._id) })));
+        // fetch assignments so counts are accurate
+        try {
+          const allAssignments = await assignmentsApi.getAll();
+          if (!mounted) return;
+          const list = Array.isArray(allAssignments) ? allAssignments : [];
+          // normalize id fields and ensure courseId is a string for reliable matching
+          setAssignments(list.map((a: any) => {
+            const normalizedCourseId = a && a.courseId ? (typeof a.courseId === 'object' ? String(a.courseId.id || a.courseId._id || a.courseId) : String(a.courseId)) : '';
+            return ({ ...(a || {}), id: String(a.id || a._id), courseId: normalizedCourseId });
+          }) as any);
+        } catch (e) {
+          // ignore assignment load failures
+        }
       } catch (e) {
         // ignore
       }
@@ -476,7 +526,40 @@ export default function TutorDashboard({ onNavigate, onOpenCourse, onOpenAssignm
   {/* Assignments Tab */}
   {!hideAssignments && (
   <TabsContent value="assignments" className="space-y-4">
-          <Dialog open={isCreateAssignmentOpen} onOpenChange={setIsCreateAssignmentOpen}>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Label className="text-sm">Filter by Course</Label>
+              <Select value={typeof window !== 'undefined' ? (window.localStorage.getItem('assignmentCourseFilter') || 'all') : 'all'} onValueChange={(v) => {
+                setAssignmentCourseFilter(v);
+                try { if (typeof window !== 'undefined') window.localStorage.setItem('assignmentCourseFilter', v); } catch (e) {}
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All courses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All courses</SelectItem>
+                  {courses.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="ml-4">
+                <Label className="text-sm">Deadline</Label>
+                <Select value={assignmentDeadlineFilter} onValueChange={(v) => setAssignmentDeadlineFilter(v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="upcoming">Upcoming</SelectItem>
+                    <SelectItem value="past">Past</SelectItem>
+                    <SelectItem value="no-deadline">No deadline</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Dialog open={isCreateAssignmentOpen} onOpenChange={setIsCreateAssignmentOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="mr-2 h-4 w-4" /> Create Assignment
@@ -494,10 +577,46 @@ export default function TutorDashboard({ onNavigate, onOpenCourse, onOpenAssignm
               />
             </DialogContent>
           </Dialog>
+            </div>
 
           <div className="space-y-4">
-            {courses.map((course) => {
-              const courseAssignments = getAssignmentsForCourse(course.id);
+            {((assignmentCourseFilter === 'all') ? courses : courses.filter((c) => String(c.id) === String(assignmentCourseFilter))).map((course) => {
+              const courseAssignmentsRaw = getAssignmentsForCourse(course.id);
+              const now = new Date();
+              const hasDue = (a: any) => { try { return !!a && !!a.dueDate && !isNaN(new Date(a.dueDate).getTime()); } catch(e){ return false; } };
+              const isPast = (a: any) => hasDue(a) && new Date(a.dueDate).getTime() < now.getTime();
+
+              // apply deadline filter
+              let courseAssignments = courseAssignmentsRaw.filter((a: any) => {
+                if (!a) return false;
+                if (assignmentDeadlineFilter === 'upcoming') return hasDue(a) && !isPast(a);
+                if (assignmentDeadlineFilter === 'past') return isPast(a);
+                if (assignmentDeadlineFilter === 'no-deadline') return !hasDue(a);
+                return true;
+              });
+
+              // when showing all, sort: upcoming (future) first, then no-deadline, then past
+              if (assignmentDeadlineFilter === 'all') {
+                const rank = (a: any) => {
+                  if (!a) return 1;
+                  if (!hasDue(a)) return 1;
+                  return isPast(a) ? 2 : 0;
+                };
+                courseAssignments = courseAssignments.slice().sort((a: any, b: any) => {
+                  const ra = rank(a), rb = rank(b);
+                  if (ra !== rb) return ra - rb;
+                  const da = hasDue(a) ? new Date(a.dueDate).getTime() : 0;
+                  const db = hasDue(b) ? new Date(b.dueDate).getTime() : 0;
+                  return (da || 0) - (db || 0);
+                });
+              } else {
+                // otherwise sort by due date ascending when available
+                courseAssignments = courseAssignments.slice().sort((a: any, b: any) => {
+                  const da = hasDue(a) ? new Date(a.dueDate).getTime() : 0;
+                  const db = hasDue(b) ? new Date(b.dueDate).getTime() : 0;
+                  return (da || 0) - (db || 0);
+                });
+              }
               return (
                 <Card key={course.id}>
                   <CardHeader>
@@ -513,21 +632,30 @@ export default function TutorDashboard({ onNavigate, onOpenCourse, onOpenAssignm
                             <div className="flex-1">
                               <p className="font-medium">{assignment.title}</p>
                               <p className="text-sm text-muted-foreground">{assignment.type === "upload" ? "File Submission" : "Auto-graded Quiz"}</p>
-                              <p className="text-xs text-muted-foreground">Due: {assignment.dueDate}</p>
+                              {!(currentUser && currentUser.role === 'student') ? (
+                                <p className="text-xs text-muted-foreground">Due: {assignment.dueDate}</p>
+                              ) : (
+                                // students should only see title; hide due date
+                                null
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
                               <Button variant="ghost" size="icon" onClick={() => { if (onOpenAssignment && assignment.id) { onOpenAssignment(assignment.id); } else { setEditAssignmentDraft(assignment); setIsEditAssignmentOpen(true); } }} title="Open assignment">
                                 <FileText className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={() => {
-                                setEditAssignmentDraft(assignment);
-                                setIsEditAssignmentOpen(true);
-                              }} title="Edit">
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" onClick={() => handleRemoveAssignment(assignment.id || (assignment as any)._id)} title="Delete">
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
+                              {(currentUser && (currentUser.role === 'tutor' || currentUser.role === 'admin')) && (
+                                <>
+                                  <Button variant="ghost" size="icon" onClick={() => {
+                                    setEditAssignmentDraft(assignment);
+                                    setIsEditAssignmentOpen(true);
+                                  }} title="Edit">
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" onClick={() => handleRemoveAssignment(assignment.id || (assignment as any)._id)} title="Delete">
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                </>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -584,9 +712,9 @@ export default function TutorDashboard({ onNavigate, onOpenCourse, onOpenAssignm
             </Dialog>
 
             <Dialog open={isBulkTransferOpen} onOpenChange={setIsBulkTransferOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline">Bulk Transfer</Button>
-              </DialogTrigger>
+                <DialogTrigger asChild>
+                  <Button variant="outline">Bulk Transfer</Button>
+                </DialogTrigger>
               <DialogContent className="max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Bulk Transfer Students</DialogTitle>
