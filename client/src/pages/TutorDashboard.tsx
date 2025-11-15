@@ -526,14 +526,14 @@ export default function TutorDashboard({ onNavigate, onOpenCourse, onOpenAssignm
   {/* Assignments Tab */}
   {!hideAssignments && (
   <TabsContent value="assignments" className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex items-center gap-4">
               <Label className="text-sm">Filter by Course</Label>
               <Select value={typeof window !== 'undefined' ? (window.localStorage.getItem('assignmentCourseFilter') || 'all') : 'all'} onValueChange={(v) => {
                 setAssignmentCourseFilter(v);
                 try { if (typeof window !== 'undefined') window.localStorage.setItem('assignmentCourseFilter', v); } catch (e) {}
               }}>
-                <SelectTrigger>
+                <SelectTrigger className="w-48">
                   <SelectValue placeholder="All courses" />
                 </SelectTrigger>
                 <SelectContent>
@@ -543,12 +543,12 @@ export default function TutorDashboard({ onNavigate, onOpenCourse, onOpenAssignm
                   ))}
                 </SelectContent>
               </Select>
-              <div className="ml-4">
+              <div>
                 <Label className="text-sm">Deadline</Label>
                 <Select value={assignmentDeadlineFilter} onValueChange={(v) => setAssignmentDeadlineFilter(v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
+                  <SelectTrigger className="w-40">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="upcoming">Upcoming</SelectItem>
