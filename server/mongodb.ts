@@ -56,6 +56,8 @@ const courseSchema = new mongoose.Schema({
   attachments: [{ type: String }],
   tags: [{ type: String }],
   estimatedDuration: { type: String },
+  duration: { type: Number }, // Duration in hours (set by tutor)
+  isMandatory: { type: Boolean, default: true }, // All students must join mandatory courses
   // Chapters: each chapter can have notes and multiple materials (ppt/pdf links)
   chapters: [{
     title: { type: String },

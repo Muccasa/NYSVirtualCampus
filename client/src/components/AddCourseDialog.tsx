@@ -29,6 +29,8 @@ export function AddCourseDialog({ onCourseAdded }: AddCourseDialogProps) {
     thumbnail: '',
     notes: '',
     estimatedDuration: '',
+    duration: '',
+    isMandatory: true,
     tags: '',
   });
 
@@ -49,6 +51,8 @@ export function AddCourseDialog({ onCourseAdded }: AddCourseDialogProps) {
 
       const courseData = {
         ...formData,
+        duration: formData.duration ? parseInt(formData.duration) : undefined,
+        isMandatory: formData.isMandatory === true,
         tags: tagsArray,
         // The server will generate the enrollment key automatically
       };
@@ -84,6 +88,8 @@ export function AddCourseDialog({ onCourseAdded }: AddCourseDialogProps) {
           thumbnail: '',
           notes: '',
           estimatedDuration: '',
+          duration: '',
+          isMandatory: true,
           tags: '',
         });
         onCourseAdded?.();
@@ -158,7 +164,7 @@ export function AddCourseDialog({ onCourseAdded }: AddCourseDialogProps) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="estimatedDuration">Duration</Label>
+              <Label htmlFor="estimatedDuration">Estimated Duration</Label>
               <Input
                 id="estimatedDuration"
                 placeholder="e.g., 12 weeks"
@@ -166,6 +172,33 @@ export function AddCourseDialog({ onCourseAdded }: AddCourseDialogProps) {
                 onChange={(e) => handleInputChange('estimatedDuration', e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="duration">Duration (Hours)</Label>
+            <Input
+              id="duration"
+              type="number"
+              placeholder="e.g., 40"
+              value={formData.duration}
+              onChange={(e) => handleInputChange('duration', e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Total hours for this course</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="isMandatory" className="flex items-center gap-2 cursor-pointer">
+              <input
+                id="isMandatory"
+                type="checkbox"
+                checked={formData.isMandatory}
+                onChange={(e) => handleInputChange('isMandatory', e.target.checked ? 'true' : 'false')}
+              />
+              All students must join this course (Mandatory)
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              If checked, all students will be auto-enrolled in this course
+            </p>
           </div>
 
           <div className="space-y-2">

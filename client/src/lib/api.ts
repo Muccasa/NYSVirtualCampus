@@ -184,6 +184,7 @@ export type ApiUser = {
   fullName: string;
   role: 'student' | 'tutor' | 'admin';
   department?: string;
+  isGraduated?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -201,6 +202,12 @@ export type ApiCourse = {
   attachments: string[];
   tags: string[];
   estimatedDuration?: string;
+  duration?: number;
+  isMandatory?: boolean;
+  enrollmentKey?: string;
+  startDate?: string;
+  endDate?: string;
+  archived?: boolean;
     chapters?: Array<{ title?: string; description?: string; materials?: Array<{ type?: string; url?: string; label?: string }> }>;
     enrollEmails?: string[];
   isActive: boolean;

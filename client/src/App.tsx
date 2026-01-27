@@ -18,6 +18,8 @@ import StudentDashboard from "@/pages/StudentDashboard";
 import TutorDashboard from "@/pages/TutorDashboard";
 import TutorAssignments from "@/components/TutorAssignments";
 import AdminDashboard from "@/pages/AdminDashboard";
+import Users from "@/pages/Users";
+import Analytics from "@/pages/Analytics";
 import CourseDetail from "@/pages/CourseDetail";
 import CourseList from "@/pages/CourseList";
 import CreateCourse from "@/pages/CreateCourse";
@@ -540,17 +542,11 @@ function App() {
 
                   {/* Admin specific pages */}
                   {view === "admin" && currentPage === "users" && (
-                    <div className="space-y-6">
-                      <h1 className="text-2xl font-bold">User Management</h1>
-                      <p className="text-muted-foreground">Manage users, roles, and permissions.</p>
-                    </div>
+                    <Users />
                   )}
                   
                   {view === "admin" && currentPage === "analytics" && (
-                    <div className="space-y-6">
-                      <h1 className="text-2xl font-bold">System Analytics</h1>
-                      <p className="text-muted-foreground">View system-wide analytics and reports.</p>
-                    </div>
+                    <Analytics />
                   )}
                   
                   {view === "admin" && currentPage === "settings" && (

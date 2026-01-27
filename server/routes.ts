@@ -293,6 +293,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await newCourse.save();
       await newCourse.populate('instructorId', 'fullName');
 
+      // If course is mandatory, auto-enroll all existing students
+      const enrollResults: { processed: string[]; skipped: string[]; notFound: string[] } = { processed: [], skipped: [], notFound: [] };
+      if (coursePayload.isMandatory !== false) {
+        try {
+          const allStudents = await User.find({ role: 'student' });
+          for (const student of allStudents) {
+            const existing = await Enrollment.findOne({ courseId: newCourse._id, studentId: student._id });
+            if (!existing) {
+              const enrollment = new Enrollment({ courseId: newCourse._id, studentId: student._id });
+              await enrollment.save();
+              enrollResults.processed.push(student.email);
+            } else {
+              enrollResults.skipped.push(student.email);
+            }
+          }
+        } catch (e) {
+          console.error('Error auto-enrolling students in mandatory course', e);
+        }
+      }
+
       // If enrollEmails provided, try to create enrollments for existing student users
       const enrollResults: { processed: string[]; skipped: string[]; notFound: string[] } = { processed: [], skipped: [], notFound: [] };
       if (Array.isArray(coursePayload.enrollEmails) && coursePayload.enrollEmails.length) {

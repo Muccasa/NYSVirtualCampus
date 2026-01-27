@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { BookOpen, Users, Clock, Key } from "lucide-react";
+import { CourseManagementDialog } from "@/components/CourseManagementDialog";
+import { BookOpen, Users, Clock, Key, Settings } from "lucide-react";
 
 interface CourseCardProps {
   id: string;
@@ -20,10 +21,12 @@ interface CourseCardProps {
   onEnroll?: (enrollmentKey?: string) => void;
   onContinue?: () => void;
   onManageEnrollment?: () => void;
+  onUpdate?: () => void;
   children?: React.ReactNode;
 }
 
 export function CourseCard({
+  id,
   title,
   instructor,
   thumbnail,
@@ -35,9 +38,11 @@ export function CourseCard({
   onEnroll,
   onContinue,
   onManageEnrollment,
+  onUpdate,
   children,
 }: CourseCardProps) {
   const [isEnrollDialogOpen, setIsEnrollDialogOpen] = useState(false);
+  const [isManagementOpen, setIsManagementOpen] = useState(false);
 
   const handleEnroll = () => {
     if (onEnroll) {
@@ -107,14 +112,30 @@ export function CourseCard({
         ) : isManager ? (
           <>
             {children || (
-              <Button
+              <>
+                <Button
                   variant="outline"
                   className="w-full"
-                  onClick={onManageEnrollment ? () => onManageEnrollment() : undefined}
+                  onClick={() => {
+                    if (onManageEnrollment) {
+                      onManageEnrollment();
+                    } else {
+                      setIsManagementOpen(true);
+                    }
+                  }}
                   data-testid="button-manage-enrollment"
                 >
-                  Manage Enrollments
+                  <Settings className="mr-2 h-4 w-4" />
+                  Manage Course
                 </Button>
+                <CourseManagementDialog
+                  isOpen={isManagementOpen}
+                  onOpenChange={setIsManagementOpen}
+                  courseId={id}
+                  courseTitle={title}
+                  onUpdate={onUpdate}
+                />
+              </>
             )}
           </>
         ) : (

@@ -1,10 +1,12 @@
 // Test script to verify MongoDB connection and data (CommonJS)
+require('dotenv').config();
 const mongoose = require('mongoose');
 
 // Connect to MongoDB
 const connectDB = async () => {
   try {
     const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/nys_virtual_campus';
+    console.log('🔗 Connecting to MongoDB...');
     await mongoose.connect(mongoURI);
     console.log('✅ MongoDB connected successfully');
     
