@@ -61,18 +61,21 @@ app.use((req, res, next) => {
   
   // Check if we have BOTH the source client files AND built dist
   // If either is missing, we're in a deployed environment -> use serveStatic
-  const clientSourcePath = path.resolve(import.meta.dirname, "..", "client", "index.html");
-  const distPublicPath = path.resolve(import.meta.dirname, "..", "dist", "public");
+  // Use process.cwd() to get project root (static from where Node runs)
+  const clientSourcePath = path.resolve(process.cwd(), "client", "index.html");
+  const distPublicPath = path.resolve(process.cwd(), "dist", "public");
   const hasClientSource = fs.existsSync(clientSourcePath);
   const hasDistPublic = fs.existsSync(distPublicPath);
   
+  log(`[Startup] cwd=${process.cwd()}`);
   log(`[Startup] hasClientSource=${hasClientSource}, hasDistPublic=${hasDistPublic}`);
   
-  // Only use setupVite if BOTH source files AND build exist (development)
+  // Only use setupVite if source files exist (development)
   // Otherwise always use serveStatic (production)
-  const isDevelopment = hasClientSource && !hasDistPublic;
+  const isDevelopment = hasClientSource;
   
   log(`[Startup] Using ${isDevelopment ? "DEVELOPMENT" : "PRODUCTION"} mode (setupVite=${isDevelopment})`);
+
   
   if (isDevelopment) {
     await setupVite(app, server);
@@ -82,7 +85,7 @@ app.use((req, res, next) => {
 
   // Ensure uploads directory exists and serve it at /uploads
   try {
-    const uploadsDir = path.resolve(import.meta.dirname, '..', 'attached_assets', 'uploads');
+    const uploadsDir = path.resolve(process.cwd(), 'attached_assets', 'uploads');
     fs.mkdirSync(uploadsDir, { recursive: true });
     app.use('/uploads', express.static(uploadsDir));
   } catch (err) {
