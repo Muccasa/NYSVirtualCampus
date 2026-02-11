@@ -324,7 +324,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const enrollmentKey = nanoid(8).toUpperCase();
 
       // Default instructorId to the authenticated user if not provided
-      const instructorId = req.body.instructorId || authReq.user.userId;
+      // Validate that instructorId is a valid MongoDB ObjectId if provided
+      let instructorId = authReq.user.userId;
+      if (req.body.instructorId && req.body.instructorId.trim()) {
+        const providedId = req.body.instructorId.trim();
+        if (!mongoose.Types.ObjectId.isValid(providedId)) {
+          return res.status(400).json({ 
+            error: "Invalid instructorId: must be a valid MongoDB ObjectId" 
+          });
+        }
+        instructorId = providedId;
+      }
 
       // Persist enrollEmails if provided
       const coursePayload: any = {
@@ -426,9 +436,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.json({ course: newCourse, enrollments: enrollResults });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating course:", error);
-      res.status(500).json({ error: "Failed to create course" });
+      // Provide more specific error message for debugging
+      const errorMessage = error?.message || "Failed to create course";
+      const errorDetails = error?.errors 
+        ? Object.values(error.errors).map((e: any) => e.message).join(', ')
+        : undefined;
+      res.status(500).json({ 
+        error: errorDetails || errorMessage,
+        details: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+      });
     }
   });
 

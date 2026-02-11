@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, BookOpen, Users } from "lucide-react";
+import { Plus, BookOpen, Users, Upload, X } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { coursesApi } from "@/lib/api";
 
@@ -21,11 +21,13 @@ interface AddCourseDialogProps {
 export function AddCourseDialog({ onCourseAdded }: AddCourseDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
     department: "",
-    instructorId: "",
     thumbnail: "",
     notes: "",
     estimatedDuration: "",
@@ -43,6 +45,107 @@ export function AddCourseDialog({ onCourseAdded }: AddCourseDialogProps) {
       ...prev,
       [field]: value,
     }));
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload an image file (jpg, png, gif, etc.)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please upload an image smaller than 5MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      // Convert to base64
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(",")[1];
+
+        const token = localStorage.getItem("token");
+        if (!token) {
+          toast({
+            title: "Not authenticated",
+            description: "Please log in to upload images.",
+            variant: "destructive",
+          });
+          setIsUploading(false);
+          return;
+        }
+
+        try {
+          const response = await fetch("/api/uploads", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              filename: file.name,
+              contentBase64: base64,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error("Upload failed");
+          }
+
+          const data = await response.json();
+          setFormData((prev) => ({ ...prev, thumbnail: data.url }));
+          setImagePreview(data.url);
+          toast({
+            title: "Image uploaded",
+            description: "Thumbnail image uploaded successfully.",
+          });
+        } catch (err) {
+          console.error("Upload error:", err);
+          toast({
+            title: "Upload failed",
+            description: "Failed to upload image. Please try again.",
+            variant: "destructive",
+          });
+        } finally {
+          setIsUploading(false);
+        }
+      };
+      reader.onerror = () => {
+        toast({
+          title: "Error reading file",
+          description: "Failed to read the image file.",
+          variant: "destructive",
+        });
+        setIsUploading(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error("Image upload error:", error);
+      setIsUploading(false);
+    }
+  };
+
+  const removeImage = () => {
+    setFormData((prev) => ({ ...prev, thumbnail: "" }));
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,7 +187,7 @@ export function AddCourseDialog({ onCourseAdded }: AddCourseDialogProps) {
         duration: formData.duration ? parseInt(formData.duration) : undefined,
         isMandatory: formData.isMandatory,
         tags: tagsArray,
-        // The server will generate the enrollment key automatically
+        // The server will set instructorId to the authenticated user
       };
 
       // Ensure user is authenticated before calling API
@@ -120,7 +223,6 @@ export function AddCourseDialog({ onCourseAdded }: AddCourseDialogProps) {
           title: "",
           description: "",
           department: "",
-          instructorId: "",
           thumbnail: "",
           notes: "",
           estimatedDuration: "",
@@ -128,6 +230,7 @@ export function AddCourseDialog({ onCourseAdded }: AddCourseDialogProps) {
           isMandatory: true,
           tags: "",
         });
+        setImagePreview(null);
         onCourseAdded?.();
       } catch (err: any) {
         console.error("Course creation error:", err);
@@ -252,29 +355,50 @@ export function AddCourseDialog({ onCourseAdded }: AddCourseDialogProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="instructorId">Instructor ID</Label>
-            <Input
-              id="instructorId"
-              placeholder="Enter instructor user ID (optional)"
-              value={formData.instructorId}
-              onChange={(e) =>
-                handleInputChange("instructorId", e.target.value)
-              }
-            />
-            <p className="text-xs text-muted-foreground">
-              Enter the user ID of the instructor who will teach this course
-              (leave empty to set yourself)
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="thumbnail">Thumbnail URL</Label>
-            <Input
-              id="thumbnail"
-              placeholder="Enter thumbnail image URL"
-              value={formData.thumbnail}
-              onChange={(e) => handleInputChange("thumbnail", e.target.value)}
-            />
+            <Label>Course Thumbnail</Label>
+            <div className="border-2 border-dashed border-gray-200 rounded-lg p-4">
+              {imagePreview ? (
+                <div className="relative">
+                  <img
+                    src={imagePreview}
+                    alt="Thumbnail preview"
+                    className="w-full h-32 object-cover rounded-md"
+                  />
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    className="absolute top-2 right-2 h-6 w-6"
+                    onClick={removeImage}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className="flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 rounded-md p-4 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="h-8 w-8 text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-500">
+                    {isUploading
+                      ? "Uploading..."
+                      : "Click to upload thumbnail image"}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    JPG, PNG, GIF up to 5MB
+                  </p>
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageUpload}
+                disabled={isUploading}
+              />
+            </div>
           </div>
 
           <div className="space-y-2">
