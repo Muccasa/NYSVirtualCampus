@@ -68,34 +68,18 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  // For Vercel deployment, static files are served from the root dist directory
-  const distPath = path.resolve(import.meta.dirname, "..", "dist");
   const publicPath = path.resolve(import.meta.dirname, "..", "dist", "public");
 
-  // Check both possible locations for static files
-  const staticPath = fs.existsSync(publicPath) ? publicPath : distPath;
-
-  if (!fs.existsSync(staticPath)) {
+  if (!fs.existsSync(publicPath)) {
     throw new Error(
-      `Could not find the build directory: ${staticPath}, make sure to build the client first`,
+      `Could not find the build directory: ${publicPath}. Did you run "vite build"?`
     );
   }
 
-  app.use(express.static(staticPath));
+  app.use(express.static(publicPath));
 
-  // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
-    try {
-      const indexPath = path.resolve(staticPath, "index.html");
-      if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-      } else {
-        console.error(`Index file not found at: ${indexPath}`);
-        res.status(404).send("Application not found. Please check the build output.");
-      }
-    } catch (error) {
-      console.error("Error serving static files:", error);
-      res.status(500).send("Internal server error");
-    }
+  // SPA fallback
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(publicPath, "index.html"));
   });
 }
