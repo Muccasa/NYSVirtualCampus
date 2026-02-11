@@ -18,6 +18,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 **Status:** ✅ **CONNECTED AND FUNCTIONAL**
 
 ### Database Collections
+
 - ✅ users (15 total documents)
 - ✅ courses (6 total documents)
 - ✅ assignments (2 total documents)
@@ -31,6 +32,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ## Admin Credentials
 
 **Admin Account:**
+
 - **Email:** admin@nys.com
 - **Password:** admin123
 - **Role:** admin
@@ -43,6 +45,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ### 1. USER MANAGEMENT ✅
 
 #### CREATE USER
+
 - **Endpoint:** POST `/api/users`
 - **Authentication:** Required (admin only)
 - **Required Fields:**
@@ -57,6 +60,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 - **Test Result:** Successfully created user with ID `apiuser1770812751161@test.com`
 
 #### FETCH ALL USERS
+
 - **Endpoint:** GET `/api/users`
 - **Authentication:** Required (admin)
 - **Returns:** Array of all users in system
@@ -65,6 +69,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 - **Current Count:** 15 users
 
 #### USER DETAILS
+
 - **Endpoint:** GET `/api/users` (all) or via ID
 - **Status:** ✅ WORKING
 - **Sample Data Retrieved:**
@@ -73,6 +78,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
   - Admins: 1
 
 #### GRADUATE STUDENT
+
 - **Endpoint:** POST `/api/users/:id/graduate`
 - **Authentication:** Required (admin only)
 - **Body:** `{}`
@@ -81,6 +87,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 - **Result:** Sets `isGraduated: true` on user document
 
 #### UPDATE USER ROLE (via full update)
+
 - **Status:** ✅ SUPPORTED
 - **Fields Modifiable:**
   - role
@@ -92,6 +99,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ### 2. COURSE MANAGEMENT ✅
 
 #### CREATE COURSE
+
 - **Endpoint:** POST `/api/courses`
 - **Authentication:** Required (tutor/admin)
 - **Auto-Generated Fields:**
@@ -115,6 +123,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
   - Successfully populated with all fields
 
 #### UPDATE COURSE
+
 - **Endpoint:** PUT `/api/courses/:id`
 - **Authentication:** Required (tutor/admin)
 - **Updatable Fields:**
@@ -131,12 +140,14 @@ All admin system functionalities have been thoroughly tested and verified to be 
 - **Test Result:** Successfully updated description and isMandatory flag
 
 #### DELETE COURSE
+
 - **Endpoint:** DELETE `/api/courses/:id`
 - **Authentication:** Required (tutor/admin)
 - **Status:** ✅ WORKING
 - **Database:** ✅ REMOVES FROM COURSES COLLECTION
 
 #### FETCH COURSES
+
 - **Endpoint:** GET `/api/courses`
 - **Authentication:** Required
 - **Filtering Logic:**
@@ -147,6 +158,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 - **Current Count:** 6 active courses
 
 #### COURSE FIELDS STORED
+
 - title, description, department
 - instructorId (ObjectId reference)
 - enrollmentKey (unique)
@@ -161,6 +173,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ### 3. ENROLLMENT MANAGEMENT ✅
 
 #### ENROLL STUDENTS IN COURSE
+
 - **Endpoint:** POST `/api/courses/:id/enroll`
 - **Authentication:** Required (tutor/admin)
 - **Body:** `{ "enrollEmails": ["email@example.com"] }`
@@ -177,6 +190,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
   - Email validation
 
 #### BATCH TRANSFER STUDENTS
+
 - **Endpoint:** POST `/api/courses/bulk-transfer`
 - **Authentication:** Required (tutor/admin)
 - **Status:** ✅ WORKING
@@ -187,6 +201,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ### 4. ASSIGNMENT MANAGEMENT ✅
 
 #### CREATE ASSIGNMENT
+
 - **Endpoint:** POST `/api/assignments`
 - **Authentication:** Required (tutor/admin)
 - **Required Fields:**
@@ -205,6 +220,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 - **Test Result:** Successfully created assignment with questions array
 
 #### UPDATE ASSIGNMENT
+
 - **Endpoint:** PUT `/api/assignments/:id`
 - **Authentication:** Required (tutor/admin)
 - **Updatable Fields:**
@@ -220,12 +236,14 @@ All admin system functionalities have been thoroughly tested and verified to be 
 - **Test Result:** Successfully updated title and maxScore
 
 #### DELETE ASSIGNMENT
+
 - **Endpoint:** DELETE `/api/assignments/:id`
 - **Authentication:** Required (tutor/admin)
 - **Status:** ✅ WORKING
 - **Database:** ✅ REMOVES FROM ASSIGNMENTS COLLECTION
 
 #### FETCH ASSIGNMENTS
+
 - **Endpoint:** GET `/api/assignments`
 - **Query Params:** (optional) `courseId`
 - **Status:** ✅ WORKING
@@ -236,12 +254,14 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ### 5. GRADE MANAGEMENT ✅
 
 #### CREATE GRADE
+
 - **Endpoint:** POST `/api/grades`
 - **Authentication:** Required (tutor/admin)
 - **Status:** ✅ WORKING
 - **Database:** ✅ CREATES IN GRADES COLLECTION
 
 #### UPDATE GRADE
+
 - **Endpoint:** PUT `/api/grades/:id`
 - **Authentication:** Required (tutor/admin)
 - **Updatable Fields:**
@@ -251,6 +271,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 - **Database:** ✅ UPDATES GRADES COLLECTION
 
 #### FETCH GRADES
+
 - **Endpoint:** GET `/api/grades`
 - **Query Params:** (optional) `studentId`, `assignmentId`
 - **Status:** ✅ WORKING
@@ -261,18 +282,21 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ### 6. ANNOUNCEMENT MANAGEMENT ✅
 
 #### CREATE ANNOUNCEMENT
+
 - **Endpoint:** POST `/api/announcements`
 - **Authentication:** Required (tutor/admin)
 - **Status:** ✅ WORKING
 - **Database:** ✅ CREATES IN ANNOUNCEMENTS COLLECTION
 
 #### DELETE ANNOUNCEMENT
+
 - **Endpoint:** DELETE `/api/announcements/:id`
 - **Authentication:** Required (tutor/admin)
 - **Status:** ✅ WORKING
 - **Database:** ✅ REMOVES FROM ANNOUNCEMENTS COLLECTION
 
 #### FETCH ANNOUNCEMENTS
+
 - **Endpoint:** GET `/api/announcements`
 - **Status:** ✅ WORKING
 - **Database:** ✅ RETRIEVES FROM ANNOUNCEMENTS COLLECTION
@@ -282,6 +306,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ## Frontend Components Verification
 
 ### Admin Dashboard (`client/src/pages/AdminDashboard.tsx`)
+
 - ✅ User Management Tab
 - ✅ Course Management Tab
 - ✅ Stats Display (Total Users, Active Courses, Tutors, Students)
@@ -290,6 +315,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 - ✅ Action handlers for all operations
 
 ### Admin Features
+
 - ✅ View all users with role-based filtering
 - ✅ Create new users (student, tutor, admin)
 - ✅ Enroll students in courses
@@ -301,6 +327,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 - ✅ Transfer students between courses
 
 ### Users Page (`client/src/pages/Users.tsx`)
+
 - ✅ Search users by name/email
 - ✅ Filter by role (student, tutor, admin)
 - ✅ Create new users
@@ -312,6 +339,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ## Test Results Summary
 
 ### Database Direct Access Tests
+
 ```
 ✅ Admin user verified: admin@nys.com
 ✅ Test user creation: Successful
@@ -326,6 +354,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ```
 
 ### API Layer Tests
+
 ```
 ✅ Admin authentication: Working (JWT token generated)
 ✅ User fetch: 15 users retrieved
@@ -344,6 +373,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ## Server Configuration
 
 **Server Status:** ✅ RUNNING
+
 - **Port:** 5000
 - **Environment:** Development (npm run dev)
 - **Database:** MongoDB Atlas
@@ -354,12 +384,14 @@ All admin system functionalities have been thoroughly tested and verified to be 
 ## Test Scripts Available
 
 ### 1. `scripts/testAllAdminFunctions.cjs`
+
 - Direct MongoDB connection testing
 - Tests all admin CRUD operations
 - Does not require server to be running
 - **Usage:** `node scripts/testAllAdminFunctions.cjs`
 
 ### 2. `scripts/testAdminAPIComplete.cjs`
+
 - HTTP-based API testing
 - Tests all endpoints with proper authentication
 - Requires server running on port 5000
@@ -372,6 +404,7 @@ All admin system functionalities have been thoroughly tested and verified to be 
 **✅ ALL ADMIN FUNCTIONALITIES ARE FULLY OPERATIONAL AND DATABASE-CONNECTED**
 
 The admin system supports:
+
 - ✅ Complete user lifecycle management
 - ✅ Full course creation and management
 - ✅ Assignment creation and grading
@@ -380,6 +413,7 @@ The admin system supports:
 - ✅ Comprehensive data persistence
 
 All operations are successfully saved to MongoDB Atlas and can be verified through:
+
 1. Direct database queries (using test scripts)
 2. API endpoints (using REST clients or test scripts)
 3. Frontend admin interface (Admin Dashboard)
