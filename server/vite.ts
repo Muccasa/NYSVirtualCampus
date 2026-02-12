@@ -1,5 +1,3 @@
-// server/vite.ts (FIXED)
-
 import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
@@ -44,14 +42,12 @@ export async function setupVite(app: Express, server: Server) {
 
   app.use(vite.middlewares);
 
-  // Dev SPA fallback via Vite
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
 
     try {
-      const clientTemplate = path.resolve(import.meta.dirname, "..", "client", "index.html");
+      const clientTemplate = path.resolve(process.cwd(), "client", "index.html");
 
-      // always reload index.html from disk in case it changes
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
         `src="/src/main.tsx"`,
@@ -68,35 +64,21 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  // 🔒 LOCKED to your Vite build output folder: dist/public
-  // Using import.meta.dirname is more stable than process.cwd() on platforms like Render.
-  const publicPath = path.resolve(import.meta.dirname, "..", "dist", "public");
+  // ✅ MUST match your Vite outDir: dist/public
+  const publicPath = path.resolve(process.cwd(), "dist", "public");
   const indexPath = path.join(publicPath, "index.html");
 
-  log(`[serveStatic] Checking for build at: ${publicPath}`);
+  log(`[serveStatic] Serving static from: ${publicPath}`);
 
   if (!fs.existsSync(publicPath)) {
-    const errorMsg =
-      `Build directory not found: ${publicPath}\n` +
-      `Please run "npm run build" before starting in production.`;
-    log(`[serveStatic] ERROR: ${errorMsg}`);
-    throw new Error(errorMsg);
+    throw new Error(`Build directory not found: ${publicPath}`);
   }
-
   if (!fs.existsSync(indexPath)) {
-    const errorMsg =
-      `index.html not found in: ${indexPath}\n` +
-      `Your build may be incomplete. Please run "npm run build" again.`;
-    log(`[serveStatic] ERROR: ${errorMsg}`);
-    throw new Error(errorMsg);
+    throw new Error(`index.html not found: ${indexPath}`);
   }
 
-  log(`[serveStatic] Serving static files from: ${publicPath}`);
-
-  // Serve assets
   app.use(express.static(publicPath));
 
-  // SPA fallback: do not intercept API/uploads routes
   app.get("*", (req, res, next) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) return next();
     res.sendFile(indexPath);
